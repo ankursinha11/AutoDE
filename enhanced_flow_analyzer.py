@@ -9,6 +9,7 @@ import ast
 import sqlparse
 from collections import defaultdict
 import xml.etree.ElementTree as ET
+import sys
 
 class EnhancedFlowAnalyzer:
     """
@@ -923,11 +924,14 @@ def main():
     print("This tool analyzes execution flow, dependencies, and detailed logic in both Hadoop and Databricks.")
     print()
     
-    hadoop_path = input("Enter Hadoop repository path: ").strip()
-    databricks_path = input("Enter Azure Databricks repository path: ").strip()
-    
-    if not hadoop_path or not databricks_path:
-        print("Error: Both repository paths are required!")
+    # Check for command line arguments
+    if len(sys.argv) >= 3:
+        hadoop_path = sys.argv[1]
+        databricks_path = sys.argv[2]
+        output_file = sys.argv[3] if len(sys.argv) > 3 else "DETAILED_EXECUTION_FLOW.xlsx"
+    else:
+        print("Usage: python enhanced_flow_analyzer.py <hadoop_path> <databricks_path> [output_file]")
+        print("Example: python enhanced_flow_analyzer.py /path/to/app-cdd /path/to/CDD DETAILED_FLOW.xlsx")
         return
     
     if not os.path.exists(hadoop_path):
@@ -943,10 +947,6 @@ def main():
     analyzer.analyze_databricks_execution_flow(databricks_path)
     
     # Create detailed Excel output
-    output_file = input("Enter output Excel filename (default: DETAILED_EXECUTION_FLOW.xlsx): ").strip()
-    if not output_file:
-        output_file = "DETAILED_EXECUTION_FLOW.xlsx"
-    
     analyzer.create_detailed_flow_excel(output_file)
     
     print(f"\nAnalysis complete!")
