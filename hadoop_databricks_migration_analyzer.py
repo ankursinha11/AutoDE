@@ -749,12 +749,28 @@ class CDDMigrationAnalyzer:
 
 def main():
     """Main function"""
+    import sys
+    
     print("🚀 Hadoop to Azure Databricks CDD Migration Analyzer")
     print("=" * 60)
     
-    # Get paths from user
-    hadoop_repo_path = input("Enter Hadoop CDD repository path: ").strip()
-    databricks_repo_path = input("Enter Azure Databricks CDD repository path: ").strip()
+    # Check command line arguments
+    if len(sys.argv) == 3:
+        hadoop_repo_path = sys.argv[1]
+        databricks_repo_path = sys.argv[2]
+    else:
+        print("Usage: python hadoop_databricks_migration_analyzer.py <hadoop_path> <databricks_path>")
+        print("\nExample:")
+        print("python hadoop_databricks_migration_analyzer.py /path/to/hadoop/cdd /path/to/databricks/cdd")
+        print("\nOr run with default test paths:")
+        print("python hadoop_databricks_migration_analyzer.py")
+        
+        # Use default test paths if no arguments provided
+        hadoop_repo_path = "./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion"
+        databricks_repo_path = "./mock_databricks_cdd"
+        print(f"\n🔧 Using default test paths:")
+        print(f"   Hadoop: {hadoop_repo_path}")
+        print(f"   Databricks: {databricks_repo_path}")
     
     if not hadoop_repo_path or not databricks_repo_path:
         print("❌ Please provide both repository paths")
