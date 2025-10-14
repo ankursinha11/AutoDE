@@ -1093,32 +1093,37 @@ class MigrationValidationTool:
                 cell.border = thin_border
 
 def main():
-    """Main function to run the migration validation tool"""
-    import sys
-    
-    validator = MigrationValidationTool()
-    
-    print("=== Migration Validation Tool ===")
+    """Main function with hardcoded paths"""
+    print("=== Migration Validation Tool (Hardcoded Paths) ===")
     print("This tool validates that Azure Databricks migration covers all Hadoop legacy functionality")
     print()
     
-    # Check for command line arguments
-    if len(sys.argv) >= 3:
-        hadoop_path = sys.argv[1]
-        databricks_path = sys.argv[2]
-        output_file = sys.argv[3] if len(sys.argv) > 3 else "MIGRATION_VALIDATION_REPORT.xlsx"
-    else:
-        print("Usage: python migration_validation_tool.py <hadoop_path> <databricks_path> [output_file]")
-        print("Example: python migration_validation_tool.py /path/to/app-cdd /path/to/CDD VALIDATION_REPORT.xlsx")
-        return
+    # Hardcoded paths based on your environment
+    hadoop_path = "app-cdd"
+    databricks_path = "CDD"
+    output_file = "MIGRATION_VALIDATION_REPORT.xlsx"
     
+    print(f"🔍 Using hardcoded paths:")
+    print(f"   Hadoop (Legacy): {hadoop_path}")
+    print(f"   Databricks (Current): {databricks_path}")
+    print(f"   Output file: {output_file}")
+    print()
+    
+    # Check if paths exist
     if not os.path.exists(hadoop_path):
         print(f"❌ Error: Hadoop repository path does not exist: {hadoop_path}")
+        print(f"   Current directory: {os.getcwd()}")
+        print(f"   Available files: {os.listdir('.')}")
         return
     
     if not os.path.exists(databricks_path):
         print(f"❌ Error: Databricks repository path does not exist: {databricks_path}")
+        print(f"   Current directory: {os.getcwd()}")
+        print(f"   Available files: {os.listdir('.')}")
         return
+    
+    # Create validator and analyze both systems
+    validator = MigrationValidationTool()
     
     # Analyze both systems
     validator.analyze_hadoop_legacy(hadoop_path)
