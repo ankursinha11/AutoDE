@@ -201,13 +201,17 @@ class ComprehensiveHadoopAnalyzer:
         """Find all Oozie workflow files"""
         patterns = [
             "**/coordinators/*.xml",
-            "**/workflows/**/*.xml"
+            "**/workflows/**/*.xml",
+            "**/oozie/*.xml"
         ]
         
         workflow_files = []
         for pattern in patterns:
             files = list(self.hadoop_repo_path.glob(pattern))
             workflow_files.extend(files)
+        
+        # Remove duplicates
+        workflow_files = list(set(workflow_files))
         
         return workflow_files
     
@@ -302,44 +306,52 @@ class ComprehensiveHadoopAnalyzer:
         script_path = ""
         technology = ""
         
-        # Check for Spark actions
-        spark_elem = action_elem.find('.//{uri:oozie:spark-action:0.1}spark')
+        # Check for Spark actions (try multiple namespace patterns)
+        spark_elem = (action_elem.find('.//spark') or 
+                     action_elem.find('.//{uri:oozie:spark-action:0.1}spark') or
+                     action_elem.find('.//{uri:oozie:workflow:0.5}spark'))
         if spark_elem is not None:
             action_type = "spark"
             technology = "spark"
-            jar_elem = spark_elem.find('{uri:oozie:spark-action:0.1}jar')
+            jar_elem = (spark_elem.find('jar') or 
+                       spark_elem.find('{uri:oozie:spark-action:0.1}jar') or
+                       spark_elem.find('{uri:oozie:workflow:0.5}jar'))
             if jar_elem is not None:
                 script_path = jar_elem.text or ""
         
-        # Check for Pig actions
-        pig_elem = action_elem.find('.//{uri:oozie:pig-action:0.1}pig')
+        # Check for Pig actions (try multiple namespace patterns)
+        pig_elem = (action_elem.find('.//pig') or 
+                   action_elem.find('.//{uri:oozie:pig-action:0.1}pig') or
+                   action_elem.find('.//{uri:oozie:workflow:0.5}pig'))
         if pig_elem is not None:
             action_type = "pig"
             technology = "pig"
-            script_elem = pig_elem.find('{uri:oozie:pig-action:0.1}script')
+            script_elem = (pig_elem.find('script') or 
+                          pig_elem.find('{uri:oozie:pig-action:0.1}script') or
+                          pig_elem.find('{uri:oozie:workflow:0.5}script'))
             if script_elem is not None:
                 script_path = script_elem.text or ""
         
-        # Check for Hive actions
-        hive_elem = action_elem.find('.//{uri:oozie:hive-action:0.2}hive')
+        # Check for Hive actions (try both with and without namespace)
+        hive_elem = action_elem.find('.//hive') or action_elem.find('.//{uri:oozie:hive-action:0.2}hive')
         if hive_elem is not None:
             action_type = "hive"
             technology = "hive"
-            script_elem = hive_elem.find('{uri:oozie:hive-action:0.2}script')
+            script_elem = hive_elem.find('script') or hive_elem.find('{uri:oozie:hive-action:0.2}script')
             if script_elem is not None:
                 script_path = script_elem.text or ""
         
-        # Check for Shell actions
-        shell_elem = action_elem.find('.//{uri:oozie:shell-action:0.3}shell')
+        # Check for Shell actions (try both with and without namespace)
+        shell_elem = action_elem.find('.//shell') or action_elem.find('.//{uri:oozie:shell-action:0.3}shell')
         if shell_elem is not None:
             action_type = "shell"
             technology = "shell"
-            exec_elem = shell_elem.find('{uri:oozie:shell-action:0.3}exec')
+            exec_elem = shell_elem.find('exec') or shell_elem.find('{uri:oozie:shell-action:0.3}exec')
             if exec_elem is not None:
                 script_path = exec_elem.text or ""
         
-        # Check for Email actions
-        email_elem = action_elem.find('.//{uri:oozie:email-action:0.2}email')
+        # Check for Email actions (try both with and without namespace)
+        email_elem = action_elem.find('.//email') or action_elem.find('.//{uri:oozie:email-action:0.2}email')
         if email_elem is not None:
             action_type = "email"
             technology = "notification"
@@ -1161,11 +1173,28 @@ class ComprehensiveHadoopAnalyzer:
 
 def main():
     """Main function"""
+    import sys
+    
     print("🚀 Comprehensive Hadoop Repository Analysis Tool")
     print("=" * 60)
     
-    # Use current repository
-    repo_path = "./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion"
+    # Check command line arguments
+    if len(sys.argv) == 2:
+        repo_path = sys.argv[1]
+    else:
+        print("Usage: python comprehensive_hadoop_analyzer.py <hadoop_path>")
+        print("\nExample:")
+        print("python comprehensive_hadoop_analyzer.py /path/to/hadoop/repo")
+        print("\nOr run with default test path:")
+        print("python comprehensive_hadoop_analyzer.py")
+        
+        # Use default test path
+        repo_path = "./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion"
+        print(f"\n🔧 Using default test path: {repo_path}")
+    
+    if not repo_path:
+        print("❌ Please provide Hadoop repository path")
+        return
     
     # Initialize analyzer
     analyzer = ComprehensiveHadoopAnalyzer(repo_path)
