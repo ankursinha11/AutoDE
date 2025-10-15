@@ -313,9 +313,18 @@ class ComprehensiveHadoopAnalyzer:
         if spark_elem is not None:
             action_type = "spark"
             technology = "spark"
-            jar_elem = (spark_elem.find('jar') or 
-                       spark_elem.find('{uri:oozie:spark-action:0.1}jar') or
-                       spark_elem.find('{uri:oozie:workflow:0.5}jar'))
+            jar_elem = None
+            # Try different ways to find jar element
+            for child in spark_elem:
+                if child.tag.endswith('jar'):
+                    jar_elem = child
+                    break
+            
+            if jar_elem is None:
+                # Fallback to original method
+                jar_elem = (spark_elem.find('{uri:oozie:spark-action:0.1}jar') or 
+                           spark_elem.find('jar') or
+                           spark_elem.find('{uri:oozie:workflow:0.5}jar'))
             if jar_elem is not None:
                 script_path = jar_elem.text or ""
         
@@ -341,12 +350,25 @@ class ComprehensiveHadoopAnalyzer:
             if script_elem is not None:
                 script_path = script_elem.text or ""
         
-        # Check for Shell actions (try both with and without namespace)
-        shell_elem = action_elem.find('.//shell') or action_elem.find('.//{uri:oozie:shell-action:0.3}shell')
+        # Check for Shell actions (try multiple namespace patterns)
+        shell_elem = (action_elem.find('.//shell') or 
+                     action_elem.find('.//{uri:oozie:shell-action:0.3}shell') or
+                     action_elem.find('.//{uri:oozie:workflow:0.5}shell'))
         if shell_elem is not None:
             action_type = "shell"
             technology = "shell"
-            exec_elem = shell_elem.find('exec') or shell_elem.find('{uri:oozie:shell-action:0.3}exec')
+            exec_elem = None
+            # Try different ways to find exec element
+            for child in shell_elem:
+                if child.tag.endswith('exec'):
+                    exec_elem = child
+                    break
+            
+            if exec_elem is None:
+                # Fallback to original method
+                exec_elem = (shell_elem.find('{uri:oozie:shell-action:0.3}exec') or
+                            shell_elem.find('exec') or
+                            shell_elem.find('{uri:oozie:workflow:0.5}exec'))
             if exec_elem is not None:
                 script_path = exec_elem.text or ""
         
@@ -368,7 +390,7 @@ class ComprehensiveHadoopAnalyzer:
             'action_type': action_type,
             'technology': technology,
             'script_path': script_path,
-            'script_name': Path(script_path).name if script_path else 'N/A',
+            'script_name': self._extract_script_name(script_path),
             'input_tables': script_info.get('input_tables', []),
             'output_tables': script_info.get('output_tables', []),
             'data_sources': script_info.get('data_sources', []),
@@ -440,7 +462,7 @@ class ComprehensiveHadoopAnalyzer:
             'complexity_score': 0
         }
         
-        # Extract input tables
+        # Extract input tables - improved patterns
         input_patterns = [
             r'spark\.read\.parquet\(["\']([^"\']+)["\']',
             r'spark\.read\.table\(["\']([^"\']+)["\']',
@@ -448,7 +470,11 @@ class ComprehensiveHadoopAnalyzer:
             r'\.read\.parquet\(["\']([^"\']+)["\']',
             r'\.read\.table\(["\']([^"\']+)["\']',
             r'\.read\.csv\(["\']([^"\']+)["\']',
-            r'\.read\.json\(["\']([^"\']+)["\']'
+            r'\.read\.json\(["\']([^"\']+)["\']',
+            r'\.load\(["\']([^"\']+)["\']',
+            r'\.option\(["\']path["\'],\s*["\']([^"\']+)["\']',
+            r'\.option\(["\']dbtable["\'],\s*["\']([^"\']+)["\']',
+            r'\.option\(["\']query["\'],\s*["\']([^"\']+)["\']'
         ]
         
         for pattern in input_patterns:
@@ -459,14 +485,18 @@ class ComprehensiveHadoopAnalyzer:
                     info['input_tables'].append(table_name)
                     info['data_sources'].append(match)
         
-        # Extract output tables
+        # Extract output tables - improved patterns
         output_patterns = [
             r'\.write\.mode\(["\']([^"\']+)["\']\)\.parquet\(["\']([^"\']+)["\']',
             r'\.write\.parquet\(["\']([^"\']+)["\']',
             r'\.write\.mode\(["\']([^"\']+)["\']\)\.table\(["\']([^"\']+)["\']',
             r'\.write\.table\(["\']([^"\']+)["\']',
             r'\.write\.mode\(["\']([^"\']+)["\']\)\.csv\(["\']([^"\']+)["\']',
-            r'\.write\.csv\(["\']([^"\']+)["\']'
+            r'\.write\.csv\(["\']([^"\']+)["\']',
+            r'\.write\.mode\(["\']([^"\']+)["\']\)\.json\(["\']([^"\']+)["\']',
+            r'\.write\.json\(["\']([^"\']+)["\']',
+            r'\.saveAsTable\(["\']([^"\']+)["\']',
+            r'\.save\(["\']([^"\']+)["\']'
         ]
         
         for pattern in output_patterns:
@@ -573,9 +603,41 @@ class ComprehensiveHadoopAnalyzer:
                 })
         
         # Calculate complexity score
+        # Determine business purpose based on script content and patterns
+        business_purpose = self._determine_script_business_purpose(content)
+        info['business_purpose'] = business_purpose
+        
         info['complexity_score'] = self._calculate_complexity(content)
         
         return info
+    
+    def _determine_script_business_purpose(self, content: str) -> str:
+        """Determine business purpose from script content"""
+        content_lower = content.lower()
+        
+        # Business purpose patterns
+        if 'notification' in content_lower or 'email' in content_lower:
+            return 'Notification Processing'
+        elif 'audit' in content_lower or 'log' in content_lower:
+            return 'Audit and Logging'
+        elif 'parse' in content_lower or 'publish' in content_lower:
+            return 'Data Parsing and Publishing'
+        elif 'generate' in content_lower or 'create' in content_lower:
+            return 'Data Generation'
+        elif 'append' in content_lower or 'insert' in content_lower:
+            return 'Data Appending'
+        elif 'check' in content_lower or 'validate' in content_lower:
+            return 'Data Validation'
+        elif 'transform' in content_lower or 'convert' in content_lower:
+            return 'Data Transformation'
+        elif 'extract' in content_lower or 'load' in content_lower:
+            return 'Data Extraction and Loading'
+        elif 'reconcile' in content_lower or 'merge' in content_lower:
+            return 'Data Reconciliation'
+        elif 'ingest' in content_lower or 'ingestion' in content_lower:
+            return 'Data Ingestion'
+        else:
+            return 'Data Processing'
     
     def _analyze_pig_script_comprehensive(self, content: str) -> Dict[str, Any]:
         """Comprehensive analysis of Pig scripts"""
@@ -750,15 +812,17 @@ class ComprehensiveHadoopAnalyzer:
     
     def _find_script_file(self, script_path: str, workflow_file: Path) -> Optional[Path]:
         """Find the actual script file"""
-        # Clean up the path
-        clean_path = script_path.replace('${appPath}', '')
-        clean_path = clean_path.replace('${wf:actionData(\'get-datetime\')[\'date\']}', '*')
+        if not script_path or script_path == "email_notification":
+            return None
+            
+        # Extract just the filename from the path
+        script_name = Path(script_path).name
         
         # Try different search patterns
         patterns = [
-            f"**/{clean_path}",
-            f"**/{Path(clean_path).name}",
-            f"**/*{Path(clean_path).stem}*"
+            f"**/{script_name}",
+            f"**/*{script_name}",
+            f"**/{script_name}*"
         ]
         
         for pattern in patterns:
@@ -767,6 +831,19 @@ class ComprehensiveHadoopAnalyzer:
                 return matches[0]
         
         return None
+    
+    def _extract_script_name(self, script_path: str) -> str:
+        """Extract script name from script path"""
+        if not script_path or script_path == "email_notification":
+            return script_path or 'N/A'
+        
+        # Extract filename from path (handle variable substitution)
+        if '/' in script_path:
+            filename = script_path.split('/')[-1]
+        else:
+            filename = script_path
+        
+        return filename
     
     def _extract_table_name_from_path(self, path: str) -> Optional[str]:
         """Extract table name from HDFS path"""
