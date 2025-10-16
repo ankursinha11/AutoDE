@@ -108,6 +108,8 @@ class ComprehensiveHadoopAnalyzer:
         self.used_scripts = set()
         self.unused_scripts = set()
         self.all_scripts = []
+        self.data_processing_scripts = []
+        self.infrastructure_scripts = []
         self.script_dependencies = {}  # NEW: Track script-to-script dependencies
         
     def analyze_hadoop_repository(self) -> Dict[str, Any]:
@@ -1045,15 +1047,43 @@ class ComprehensiveHadoopAnalyzer:
     
     def _find_all_scripts(self) -> List[Path]:
         """Find all script files in the repository"""
-        script_extensions = ['.py', '.pig', '.sql', '.sh', '.scala']
-        script_files = []
+        # Data processing script extensions
+        data_processing_extensions = ['.py', '.pig', '.sql', '.scala']
+        # Infrastructure script extensions  
+        infrastructure_extensions = ['.sh', '.xml', '.properties', '.conf']
         
-        for ext in script_extensions:
+        data_scripts = []
+        infrastructure_scripts = []
+        
+        # Find data processing scripts
+        for ext in data_processing_extensions:
             files = list(self.hadoop_repo_path.glob(f"**/*{ext}"))
-            script_files.extend(files)
+            data_scripts.extend(files)
         
-        print(f"   📄 Found {len(script_files)} total scripts")
-        return script_files
+        # Find infrastructure scripts
+        for ext in infrastructure_extensions:
+            files = list(self.hadoop_repo_path.glob(f"**/*{ext}"))
+            infrastructure_scripts.extend(files)
+        
+        # Filter out workflow and coordinator files from data scripts
+        filtered_data_scripts = []
+        for script in data_scripts:
+            # Skip if it's in oozie directories or is a workflow/coordinator
+            if ('oozie' in str(script).lower() or 
+                'workflow' in script.name.lower() or 
+                'coordinator' in script.name.lower()):
+                infrastructure_scripts.append(script)
+            else:
+                filtered_data_scripts.append(script)
+        
+        print(f"   📄 Found {len(filtered_data_scripts)} data processing scripts")
+        print(f"   📄 Found {len(infrastructure_scripts)} infrastructure scripts")
+        
+        # Store both for analysis
+        self.data_processing_scripts = filtered_data_scripts
+        self.infrastructure_scripts = infrastructure_scripts
+        
+        return filtered_data_scripts
     
     def _identify_used_scripts_enhanced(self, all_scripts: List[Path], workflow_analyses: List[Dict[str, Any]]):
         """ENHANCED: Identify which scripts are used vs unused with dependency analysis"""
@@ -1347,22 +1377,24 @@ class ComprehensiveHadoopAnalyzer:
         return {
             'summary': {
                 'total_workflows': total_workflows,
-                'total_scripts': total_scripts,
-                'used_scripts_count': used_scripts_count,
-                'unused_scripts_count': unused_scripts_count,
-                'usage_percentage': (used_scripts_count / total_scripts * 100) if total_scripts > 0 else 0,
+                'total_data_scripts': len(self.data_processing_scripts),
+                'total_infrastructure_scripts': len(self.infrastructure_scripts),
+                'used_data_scripts_count': len([s for s in self.used_scripts if s in self.data_processing_scripts]),
+                'unused_data_scripts_count': len([s for s in self.unused_scripts if s in self.data_processing_scripts]),
+                'data_script_usage_percentage': (len([s for s in self.used_scripts if s in self.data_processing_scripts]) / len(self.data_processing_scripts) * 100) if self.data_processing_scripts else 0,
                 'technology_breakdown': tech_breakdown,
                 'domain_analysis': domain_analysis,
                 'table_registry_size': len(self.table_registry),
                 'script_dependencies_count': len(self.script_dependencies),
-                'scripts_with_dependencies': len([s for s in self.all_scripts if s in self.script_dependencies])
+                'scripts_with_dependencies': len([s for s in self.data_processing_scripts if s in self.script_dependencies])
             },
             'business_domains': [asdict(domain) for domain in self.business_domains.values()],
             'pipeline_flows': [asdict(flow) for flow in self.pipeline_flows],
             'execution_steps': [asdict(step) for step in self.execution_steps],
             'technology_flows': [asdict(flow) for flow in self.technology_flows.values()],
             'data_flow_details': [asdict(detail) for detail in self.data_flow_details],
-            'unused_scripts': [str(script) for script in self.unused_scripts],
+            'unused_data_scripts': [str(script) for script in self.unused_scripts if script in self.data_processing_scripts],
+            'infrastructure_scripts': [str(script) for script in self.infrastructure_scripts],
             'table_registry': self.table_registry,
             'script_dependencies': {str(k): [str(v) for v in vs] for k, vs in self.script_dependencies.items()}
         }
@@ -1462,17 +1494,89 @@ class ComprehensiveHadoopAnalyzer:
             
             pd.DataFrame(data_flow_data).to_excel(writer, sheet_name='Data Flow Details', index=False)
             
-            # Unused Scripts Sheet
-            unused_data = []
-            for script in analysis['unused_scripts']:
+            # Data Processing Script Usage Analysis Sheet
+            data_script_usage_data = []
+            
+            # Get all data processing scripts (used + unused)
+            all_data_scripts = set()
+            
+            # Add unused data processing scripts
+            for script_path in analysis.get('unused_data_scripts', []):
+                all_data_scripts.add(Path(script_path))
+            
+            # Add used data processing scripts
+            for workflow in analysis['execution_steps']:
+                script_name = workflow['script_name']
+                if script_name != 'N/A':
+                    # Find the actual script file
+                    for script_path in all_data_scripts:
+                        if script_path.name == script_name:
+                            all_data_scripts.add(script_path)
+                            break
+            
+            # Categorize each data processing script
+            for script_file in all_data_scripts:
+                is_directly_used = False
+                is_indirectly_used = False
+                dependencies = []
+                
+                # Check if directly used in workflows
+                for workflow in analysis['execution_steps']:
+                    if workflow['script_name'] == script_file.name:
+                        is_directly_used = True
+                        break
+                
+                # Check if indirectly used (has dependencies)
+                script_path_str = str(script_file)
+                if script_path_str in analysis['script_dependencies']:
+                    dependencies = analysis['script_dependencies'][script_path_str]
+                    is_indirectly_used = True
+                
+                # Determine usage type
+                if is_directly_used:
+                    usage_type = "Direct"
+                elif is_indirectly_used:
+                    usage_type = "Indirect"
+                else:
+                    usage_type = "Unused"
+                
+                data_script_usage_data.append({
+                    'Script Name': script_file.name,
+                    'File Path': str(script_file),
+                    'Technology': script_file.suffix[1:].upper() if script_file.suffix else 'Unknown',
+                    'Usage Type': usage_type,
+                    'Is Used': 'Yes' if (is_directly_used or is_indirectly_used) else 'No',
+                    'Dependencies': ', '.join([Path(dep).name for dep in dependencies]) if dependencies else 'None',
+                    'Size (bytes)': script_file.stat().st_size if script_file.exists() else 0
+                })
+            
+            pd.DataFrame(data_script_usage_data).to_excel(writer, sheet_name='Data Processing Scripts', index=False)
+            
+            # Infrastructure Scripts Sheet
+            infrastructure_data = []
+            for script in analysis.get('infrastructure_scripts', []):
                 script_path = Path(script)
-                unused_data.append({
-                    'Unused Script': str(script_path),
-                    'Technology': script_path.suffix,
+                infrastructure_data.append({
+                    'Infrastructure Script': str(script_path),
+                    'Type': script_path.suffix[1:].upper() if script_path.suffix else 'Unknown',
+                    'Category': self._categorize_infrastructure_script(script_path),
                     'Size': f"{script_path.stat().st_size} bytes" if script_path.exists() else "Unknown"
                 })
             
-            pd.DataFrame(unused_data).to_excel(writer, sheet_name='Unused Scripts', index=False)
+            pd.DataFrame(infrastructure_data).to_excel(writer, sheet_name='Infrastructure Scripts', index=False)
+            
+            # Unused Data Processing Scripts Sheet (focused on actual unused data scripts)
+            unused_data_scripts = []
+            for script in analysis.get('unused_data_scripts', []):
+                script_path = Path(script)
+                unused_data_scripts.append({
+                    'Unused Data Script': str(script_path),
+                    'Technology': script_path.suffix[1:].upper() if script_path.suffix else 'Unknown',
+                    'Size': f"{script_path.stat().st_size} bytes" if script_path.exists() else "Unknown",
+                    'Last Modified': script_path.stat().st_mtime if script_path.exists() else 0
+                })
+            
+            pd.DataFrame(unused_data_scripts).to_excel(writer, sheet_name='Unused Data Scripts', index=False)
             
             # Table Registry Sheet
             table_registry_data = []
@@ -1488,6 +1592,26 @@ class ComprehensiveHadoopAnalyzer:
             pd.DataFrame(table_registry_data).to_excel(writer, sheet_name='Table Registry', index=False)
         
         print(f"✅ Comprehensive Excel report generated: {output_file}")
+    
+    def _categorize_infrastructure_script(self, script_path: Path) -> str:
+        """Categorize infrastructure scripts"""
+        script_name = script_path.name.lower()
+        script_path_str = str(script_path).lower()
+        
+        if 'workflow' in script_name or 'coordinator' in script_name:
+            return 'Oozie Workflow/Coordinator'
+        elif 'oozie' in script_path_str:
+            return 'Oozie Configuration'
+        elif script_path.suffix == '.sh':
+            return 'Shell Script'
+        elif script_path.suffix == '.xml':
+            return 'XML Configuration'
+        elif script_path.suffix == '.properties':
+            return 'Properties File'
+        elif script_path.suffix == '.conf':
+            return 'Configuration File'
+        else:
+            return 'Other Infrastructure'
 
 def analyze_single_repository(repo_path: str) -> str:
     """Analyze a single repository and return the output file path"""
@@ -1510,10 +1634,11 @@ def analyze_single_repository(repo_path: str) -> str:
         summary = analysis['summary']
         print(f"\n📊 Comprehensive Analysis Results!")
         print(f"   Total Workflows: {summary['total_workflows']}")
-        print(f"   Total Scripts: {summary['total_scripts']}")
-        print(f"   Used Scripts: {summary['used_scripts_count']}")
-        print(f"   Unused Scripts: {summary['unused_scripts_count']}")
-        print(f"   Usage: {summary['usage_percentage']:.1f}%")
+        print(f"   Data Processing Scripts: {summary['total_data_scripts']}")
+        print(f"   Infrastructure Scripts: {summary['total_infrastructure_scripts']}")
+        print(f"   Used Data Scripts: {summary['used_data_scripts_count']}")
+        print(f"   Unused Data Scripts: {summary['unused_data_scripts_count']}")
+        print(f"   Data Script Usage: {summary['data_script_usage_percentage']:.1f}%")
         print(f"   Script Dependencies Found: {summary['script_dependencies_count']}")
         print(f"   Scripts with Dependencies: {summary['scripts_with_dependencies']}")
         
@@ -1607,13 +1732,16 @@ def main():
             print(f"   ❌ {repo_name}: {error}")
     
     print(f"\n📋 Each comprehensive report includes:")
-    print("   1. High-level business flow")
-    print("   2. Pipeline-level flow")
-    print("   3. Execution order flow")
-    print("   4. Technology-specific flow")
-    print("   5. Granular detail flow")
-    print("   6. Script dependency analysis (NEW)")
-    print("   7. Multi-repository support (NEW)")
+    print("   1. Summary - High-level overview with totals and breakdowns")
+    print("   2. Business Domains - Domain analysis with percentages")
+    print("   3. Pipeline Flows - High-level workflow overview")
+    print("   4. Execution Steps - Detailed action-by-action analysis")
+    print("   5. Technology Flows - Technology breakdown and usage")
+    print("   6. Data Flow Details - Deep script analysis with transformations")
+    print("   7. Data Processing Scripts - Direct vs Indirect usage (NEW)")
+    print("   8. Infrastructure Scripts - Workflow, config files (NEW)")
+    print("   9. Unused Data Scripts - Only Spark/Pig/Hive/SQL scripts (NEW)")
+    print("   10. Table Registry - DDL table information")
     
     # Exit with error code if any failed
     if failed_analyses:
