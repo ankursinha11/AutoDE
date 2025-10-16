@@ -490,6 +490,7 @@ class HadoopPipelineConsolidator:
         self.create_technology_summary_sheet(wb)
         self.create_repository_summary_sheet(wb)
         self.create_pipeline_mapping_sheet(wb)
+        self.create_adf_mapping_template(wb)
         
         wb.save(output_file)
         print(f"\n📊 Consolidated Excel report created: {output_file}")
@@ -770,6 +771,53 @@ class HadoopPipelineConsolidator:
             "notes": f"No matching workflow found. Available workflows: {len(available_workflows)}"
         }
     
+    def create_adf_mapping_template(self, wb):
+        """Create ADF Pipeline Mapping Template sheet"""
+        ws = wb.create_sheet("ADF_Mapping_Template")
+        
+        # Add title
+        ws['A1'] = "ADF Pipeline Mapping Template"
+        ws['A1'].font = Font(size=16, bold=True)
+        
+        headers = [
+            "Category", "ADF Pipeline Name", "Hadoop Repository", 
+            "Mapped Oozie Workflow", "Mapped Oozie Coordinator", 
+            "Mapping Status", "Confidence Level", "Notes"
+        ]
+        ws.append(headers)
+        
+        # Add instructions
+        ws.append([])
+        ws.append(["INSTRUCTIONS:"])
+        ws.append(["1. Add your complete ADF pipeline list in Column B"])
+        ws.append(["2. Add categories in Column A"])
+        ws.append(["3. The script will auto-populate Hadoop mappings"])
+        ws.append([])
+        
+        # Add sample entries based on what we know
+        sample_pipelines = [
+            ["dataingestion", "pl_dataingestion_big_tables", "app-data-ingestion", "big_tables_workflow.xml", "N/A", "✅ FOUND", "High", "Direct match"],
+            ["dataingestion", "pl_dataingestion_fnf", "app-data-ingestion", "sqoop_fnf_workflow.xml", "N/A", "✅ FOUND", "High", "Direct match"],
+            ["cdd", "pl_cdd_es_prebdf", "app-cdd", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"],
+            ["gmrn", "pl_gmrn_ghic", "app-globalmrn", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"],
+            ["leaddiscovery", "pl_leaddiscovery_globalmrn_assign", "app-lead-discovery", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"]
+        ]
+        
+        for pipeline in sample_pipelines:
+            ws.append(pipeline)
+        
+        ws.append([])
+        ws.append(["TOTAL COUNTS FROM CURRENT ANALYSIS:"])
+        total_workflows = sum(1 for p in self.all_pipelines if 'workflow' in p['pipeline_name'].lower())
+        total_coordinators = sum(1 for p in self.all_pipelines if 'coordinator' in p['pipeline_name'].lower())
+        total_pipelines = total_workflows + total_coordinators
+        
+        ws.append([f"Total Oozie Workflows: {total_workflows}"])
+        ws.append([f"Total Oozie Coordinators: {total_coordinators}"])
+        ws.append([f"Total Oozie Pipelines: {total_pipelines}"])
+        
+        self.format_sheet(ws)
+    
     def format_sheet(self, ws):
         """Format Excel sheet with basic styling"""
         try:
@@ -856,6 +904,16 @@ def main():
     print(f"\n📊 Technology Breakdown:")
     for tech, count in consolidator.technology_counts.most_common():
         print(f"  {tech}: {count}")
+    
+    # Calculate totals
+    total_workflows = sum(1 for p in consolidator.all_pipelines if 'workflow' in p['pipeline_name'].lower())
+    total_coordinators = sum(1 for p in consolidator.all_pipelines if 'coordinator' in p['pipeline_name'].lower())
+    total_pipelines = total_workflows + total_coordinators
+    
+    print(f"\n🎯 PIPELINE COUNTS SUMMARY:")
+    print(f"  📋 Total Oozie Workflows: {total_workflows}")
+    print(f"  ⏰ Total Oozie Coordinators/Triggers: {total_coordinators}")
+    print(f"  🔄 Total Oozie Pipelines: {total_pipelines}")
     
     print(f"\n📄 Repository Breakdown:")
     for repo_name, count in consolidator.pipeline_counts.items():
