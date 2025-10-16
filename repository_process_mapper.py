@@ -783,7 +783,6 @@ class RepositoryAnalyzer:
         # Add title
         ws['A1'] = f"Repository Process Mapping: {pair_name}"
         ws['A1'].font = Font(size=16, bold=True)
-        ws.merge_cells('A1:K1')
         
         headers = [
             "Hadoop Process", "Hadoop Type", "Hadoop Path", "Hadoop Business Logic",
@@ -912,26 +911,36 @@ class RepositoryAnalyzer:
         header_font = Font(color="FFFFFF", bold=True)
         header_alignment = Alignment(horizontal="center", vertical="center")
         
-        # Format header row
+        # Format header row (skip merged cells)
         for cell in ws[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = header_alignment
+            if hasattr(cell, 'value') and cell.value is not None:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = header_alignment
         
-        # Auto-adjust column widths
+        # Auto-adjust column widths (handle merged cells)
         for column in ws.columns:
             max_length = 0
-            column_letter = column[0].column_letter
+            column_letter = None
+            
+            # Find the first non-merged cell to get column letter
             for cell in column:
-                try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
-                except:
-                    pass
-            adjusted_width = min(max_length + 2, 50)
-            ws.column_dimensions[column_letter].width = adjusted_width
+                if hasattr(cell, 'column_letter'):
+                    column_letter = cell.column_letter
+                    break
+            
+            if column_letter:
+                for cell in column:
+                    try:
+                        if hasattr(cell, 'value') and cell.value is not None:
+                            if len(str(cell.value)) > max_length:
+                                max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[column_letter].width = adjusted_width
         
-        # Add borders
+        # Add borders (skip merged cells)
         thin_border = Border(
             left=Side(style='thin'),
             right=Side(style='thin'),
@@ -941,10 +950,13 @@ class RepositoryAnalyzer:
         
         for row in ws.iter_rows():
             for cell in row:
-                cell.border = thin_border
+                if hasattr(cell, 'value') and cell.value is not None:
+                    cell.border = thin_border
 
 def main():
     """Main function to run the enhanced repository analyzer"""
+    import sys
+    
     print("=" * 80)
     print("🚀 ENHANCED REPOSITORY PROCESS MAPPING TOOL")
     print("=" * 80)
@@ -952,11 +964,16 @@ def main():
     print("and generates separate Excel mappings for each pair.")
     print()
     
-    # Get base path containing all repositories
-    base_path = input("Enter the path containing all repositories: ").strip()
+    # Get base path from command line arguments or prompt
+    if len(sys.argv) > 1:
+        base_path = sys.argv[1]
+    else:
+        base_path = input("Enter the path containing all repositories: ").strip()
     
     if not base_path:
         print("Error: Repository path is required!")
+        print("Usage: python repository_analyzer_enhanced.py <path_to_repositories>")
+        print("Example: python repository_analyzer_enhanced.py OneDrive_1_7-25-2025/Hadoop")
         return
     
     if not os.path.exists(base_path):
