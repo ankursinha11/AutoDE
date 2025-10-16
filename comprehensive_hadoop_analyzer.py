@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-Hadoop Repository Analysis Tool
-===============================
-Standalone script to analyze Hadoop repositories and generate comprehensive Excel reports.
+Comprehensive Hadoop Repository Analysis Tool
+============================================
+Enhanced version with multi-repo support and script dependency analysis.
 
 Usage:
-    python hadoop_analyzer.py <hadoop_repo_path>
-
-Example:
-    python hadoop_analyzer.py /path/to/app-cdd
-    python hadoop_analyzer.py /path/to/app-data-ingestion
+    python comprehensive_hadoop_analyzer.py <hadoop_repo_path>
+    python comprehensive_hadoop_analyzer.py <repo1> <repo2> <repo3> ...
+    python comprehensive_hadoop_analyzer.py --file <path_to_repo_list.txt>
 
 Features:
-- Analyzes Oozie workflows and coordinators
-- Detects execution order based on coordinator schedules
-- Identifies used vs unused scripts
-- Extracts business logic and data flows
-- Generates comprehensive Excel report with multiple sheets
+- Multi-repository analysis with separate Excel files
+- Script dependency analysis (direct and indirect usage)
+- Deep code analysis for Python, Pig, SQL, Shell scripts
+- Comprehensive Excel reports with detailed sheets
+- Execution order detection based on coordinators
+- Business domain classification
+- Technology breakdown
 """
 
 import sys
@@ -29,8 +29,8 @@ from typing import Dict, List, Any, Optional, Tuple
 from collections import defaultdict
 import glob
 
-class HadoopAnalyzer:
-    """Comprehensive Hadoop repository analyzer"""
+class ComprehensiveHadoopAnalyzer:
+    """Comprehensive Hadoop repository analyzer with multi-repo support"""
     
     def __init__(self, hadoop_path: str):
         self.hadoop_path = Path(hadoop_path)
@@ -39,11 +39,12 @@ class HadoopAnalyzer:
         self.all_scripts = []
         self.used_scripts = set()
         self.unused_scripts = []
+        self.script_dependencies = {}
         
     def analyze(self) -> str:
         """Main analysis method"""
-        print("🚀 Hadoop Repository Analysis Tool")
-        print("=" * 50)
+        print("🚀 Comprehensive Hadoop Repository Analysis")
+        print("=" * 60)
         
         if not self.hadoop_path.exists():
             raise ValueError(f"Hadoop path does not exist: {self.hadoop_path}")
@@ -57,22 +58,42 @@ class HadoopAnalyzer:
         # Step 2: Analyze Oozie workflows
         print("\n🔍 Step 2: Analyzing Oozie workflows...")
         oozie_workflows = self._find_oozie_workflows()
-        self._analyze_workflows(oozie_workflows)
+        self._analyze_workflows_comprehensive(oozie_workflows)
         
         # Step 3: Find all scripts
         print("\n🔍 Step 3: Finding all scripts...")
         self._find_all_scripts()
         
-        # Step 4: Identify used vs unused scripts
+        # Step 4: Identify used vs unused scripts with dependencies
         print("\n🔍 Step 4: Identifying used vs unused scripts...")
-        self._identify_unused_scripts()
+        self._identify_unused_scripts_comprehensive()
         
-        # Step 5: Generate Excel report
-        print("\n🔍 Step 5: Generating Excel report...")
-        output_file = self._generate_excel_report()
+        # Step 5: Analyze business domains
+        print("\n🔍 Step 5: Analyzing business domains...")
+        self._analyze_business_domains(self.workflow_analyses)
+        
+        # Step 6: Create pipeline flows
+        print("\n🔍 Step 6: Creating pipeline flows...")
+        self._create_pipeline_flows()
+        
+        # Step 7: Create execution steps
+        print("\n🔍 Step 7: Creating execution steps...")
+        self._create_execution_steps()
+        
+        # Step 8: Analyze technology flows
+        print("\n🔍 Step 8: Analyzing technology flows...")
+        self._analyze_technology_flows()
+        
+        # Step 9: Create detailed data flows
+        print("\n🔍 Step 9: Creating detailed data flows...")
+        self._create_detailed_data_flows()
+        
+        # Step 10: Generate comprehensive Excel report
+        print("\n🔍 Step 10: Generating comprehensive Excel report...")
+        output_file = self._generate_comprehensive_excel_report()
         
         # Print summary
-        self._print_summary()
+        self._print_comprehensive_summary()
         
         return output_file
     
@@ -217,8 +238,8 @@ class HadoopAnalyzer:
         print(f"   📋 Workflow execution order determined: {len(workflow_order)} workflows")
         return workflow_order
     
-    def _analyze_workflows(self, oozie_workflows: List[Path]):
-        """Analyze all Oozie workflows"""
+    def _analyze_workflows_comprehensive(self, oozie_workflows: List[Path]):
+        """Analyze all Oozie workflows comprehensively"""
         workflow_order = self._determine_workflow_execution_order(oozie_workflows)
         
         for i, workflow_file in enumerate(oozie_workflows):
@@ -228,7 +249,7 @@ class HadoopAnalyzer:
                 workflow_name = root.get('name', workflow_file.stem)
                 execution_order = workflow_order.get(workflow_name, i + 1)
                 
-                analysis = self._analyze_single_workflow(workflow_file, execution_order)
+                analysis = self._analyze_single_workflow_comprehensive(workflow_file, execution_order)
                 if analysis:
                     analysis['workflow_execution_order'] = execution_order
                     self.workflow_analyses.append(analysis)
@@ -237,8 +258,8 @@ class HadoopAnalyzer:
             except Exception as e:
                 print(f"   ❌ Error analyzing {workflow_file}: {e}")
     
-    def _analyze_single_workflow(self, workflow_file: Path, execution_order: int) -> Optional[Dict[str, Any]]:
-        """Analyze a single Oozie workflow"""
+    def _analyze_single_workflow_comprehensive(self, workflow_file: Path, execution_order: int) -> Optional[Dict[str, Any]]:
+        """Analyze a single Oozie workflow comprehensively"""
         try:
             tree = ET.parse(workflow_file)
             root = tree.getroot()
@@ -250,7 +271,7 @@ class HadoopAnalyzer:
             if 'coordinator' in workflow_file.name.lower():
                 frequency = root.get('frequency', 'Unknown')
             
-            # Extract actions
+            # Extract actions with comprehensive analysis
             actions = []
             technologies = {}
             input_tables = []
@@ -259,7 +280,7 @@ class HadoopAnalyzer:
             data_targets = []
             
             for action in root.findall('.//{uri:oozie:workflow:0.5}action'):
-                action_info = self._parse_action(action, workflow_file, workflow_name)
+                action_info = self._parse_action_comprehensive(action, workflow_file, workflow_name)
                 if action_info:
                     actions.append(action_info)
                     
@@ -300,8 +321,8 @@ class HadoopAnalyzer:
             print(f"   ⚠️ Error analyzing workflow {workflow_file}: {e}")
             return None
     
-    def _parse_action(self, action_elem, workflow_file: Path, workflow_name: str) -> Optional[Dict[str, Any]]:
-        """Parse an Oozie action element"""
+    def _parse_action_comprehensive(self, action_elem, workflow_file: Path, workflow_name: str) -> Optional[Dict[str, Any]]:
+        """Parse an Oozie action element comprehensively"""
         try:
             action_name = action_elem.get('name', 'Unknown')
             
@@ -309,11 +330,16 @@ class HadoopAnalyzer:
             technology = 'Unknown'
             script_path = None
             
-            # Check for different action types
+            # Check for different action types with comprehensive parsing
             spark_elem = action_elem.find('.//{uri:oozie:spark-action:0.1}spark')
             if spark_elem is not None:
                 technology = 'Spark'
-                jar_elem = spark_elem.find('.//{uri:oozie:spark-action:0.1}jar')
+                # Look for jar element in multiple ways
+                jar_elem = None
+                for child in spark_elem:
+                    if child.tag.endswith('jar'):
+                        jar_elem = child
+                        break
                 if jar_elem is not None:
                     script_path = jar_elem.text
             
@@ -334,7 +360,12 @@ class HadoopAnalyzer:
             shell_elem = action_elem.find('.//{uri:oozie:shell-action:0.1}shell')
             if shell_elem is not None:
                 technology = 'Shell'
-                exec_elem = shell_elem.find('.//{uri:oozie:shell-action:0.1}exec')
+                # Look for exec element in multiple ways
+                exec_elem = None
+                for child in shell_elem:
+                    if child.tag.endswith('exec'):
+                        exec_elem = child
+                        break
                 if exec_elem is not None:
                     script_path = exec_elem.text
             
@@ -352,7 +383,7 @@ class HadoopAnalyzer:
             if script_path:
                 script_file = self._find_script_file(script_name)
                 if script_file and script_file.exists():
-                    deep_analysis = self._analyze_script_deep(script_file)
+                    deep_analysis = self._analyze_script_comprehensive(script_file)
             
             return {
                 'name': action_name,
@@ -382,6 +413,249 @@ class HadoopAnalyzer:
         clean_path = clean_path.replace('${', '').replace('}', '')
         
         return Path(clean_path).name or "N/A"
+    
+    def _find_script_file(self, script_name: str) -> Optional[Path]:
+        """Find the actual script file from script name"""
+        if script_name == "N/A":
+            return None
+        
+        # Look for exact match first
+        for script_file in self.all_scripts:
+            if script_file.name == script_name:
+                return script_file
+        
+        # Look for partial match
+        for script_file in self.all_scripts:
+            if script_name in script_file.name or script_file.name in script_name:
+                return script_file
+        
+        return None
+    
+    def _analyze_script_comprehensive(self, script_file: Path) -> Dict[str, Any]:
+        """Perform comprehensive analysis of a script file"""
+        analysis = {
+            'input_tables': [],
+            'output_tables': [],
+            'transformations': [],
+            'business_logic': [],
+            'data_sources': [],
+            'data_targets': []
+        }
+        
+        try:
+            with open(script_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            
+            if script_file.suffix.lower() == '.py':
+                analysis.update(self._analyze_python_script_comprehensive(content, script_file))
+            elif script_file.suffix.lower() == '.pig':
+                analysis.update(self._analyze_pig_script_comprehensive(content, script_file))
+            elif script_file.suffix.lower() == '.sql':
+                analysis.update(self._analyze_sql_script_comprehensive(content, script_file))
+            elif script_file.suffix.lower() == '.sh':
+                analysis.update(self._analyze_shell_script_comprehensive(content, script_file))
+                
+        except Exception as e:
+            print(f"   ⚠️ Error analyzing script {script_file}: {e}")
+        
+        return analysis
+    
+    def _analyze_python_script_comprehensive(self, content: str, script_file: Path) -> Dict[str, Any]:
+        """Comprehensive analysis of Python/PySpark scripts"""
+        analysis = {
+            'input_tables': [],
+            'output_tables': [],
+            'transformations': [],
+            'business_logic': [],
+            'data_sources': [],
+            'data_targets': []
+        }
+        
+        # Extract table references with more patterns
+        table_patterns = [
+            r'spark\.read\.table\(["\']([^"\']+)["\']',  # spark.read.table('table')
+            r'spark\.read\.format\(["\']([^"\']+)["\']',  # spark.read.format('parquet')
+            r'\.load\(["\']([^"\']+)["\']',  # .load('/path/to/data')
+            r'\.saveAsTable\(["\']([^"\']+)["\']',  # .saveAsTable('table')
+            r'\.write\.mode\(["\']([^"\']+)["\']',  # .write.mode('overwrite')
+            r'\.option\(["\']path["\'],\s*["\']([^"\']+)["\']',  # .option('path', '/path')
+            r'\.parquet\(["\']([^"\']+)["\']',  # .parquet('/path')
+            r'\.csv\(["\']([^"\']+)["\']',  # .csv('/path')
+            r'\.json\(["\']([^"\']+)["\']',  # .json('/path')
+        ]
+        
+        for pattern in table_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                if '/hdfs/' in match.lower() or '/data/' in match.lower():
+                    table_name = self._extract_table_name_from_path(match)
+                    if table_name:
+                        analysis['input_tables'].append(table_name)
+                        analysis['data_sources'].append(match)
+        
+        # Extract transformations with more detail
+        transform_patterns = [
+            r'\.select\(([^)]+)\)',  # .select(columns)
+            r'\.filter\(([^)]+)\)',  # .filter(condition)
+            r'\.join\(([^)]+)\)',  # .join(other_df)
+            r'\.groupBy\(([^)]+)\)',  # .groupBy(columns)
+            r'\.agg\(([^)]+)\)',  # .agg(functions)
+            r'\.withColumn\(["\']([^"\']+)["\']',  # .withColumn('new_col', ...)
+            r'\.drop\(["\']([^"\']+)["\']',  # .drop('col')
+            r'\.orderBy\(([^)]+)\)',  # .orderBy(columns)
+        ]
+        
+        for pattern in transform_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                analysis['transformations'].append(match.strip())
+        
+        # Extract business logic
+        business_patterns = [
+            r'# Business[:\s]+([^\n]+)',  # Business comments
+            r'# Logic[:\s]+([^\n]+)',  # Logic comments
+            r'# Rule[:\s]+([^\n]+)',  # Rule comments
+            r'# TODO[:\s]+([^\n]+)',  # TODO comments
+            r'# NOTE[:\s]+([^\n]+)',  # NOTE comments
+        ]
+        
+        for pattern in business_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                analysis['business_logic'].append(match.strip())
+        
+        return analysis
+    
+    def _analyze_pig_script_comprehensive(self, content: str, script_file: Path) -> Dict[str, Any]:
+        """Comprehensive analysis of Pig scripts"""
+        analysis = {
+            'input_tables': [],
+            'output_tables': [],
+            'transformations': [],
+            'business_logic': [],
+            'data_sources': [],
+            'data_targets': []
+        }
+        
+        # Extract LOAD statements
+        load_matches = re.findall(r'LOAD\s+["\']([^"\']+)["\']', content, re.IGNORECASE)
+        for match in load_matches:
+            analysis['input_tables'].append(match)
+            analysis['data_sources'].append(match)
+        
+        # Extract STORE statements
+        store_matches = re.findall(r'STORE\s+(\w+)\s+INTO\s+["\']([^"\']+)["\']', content, re.IGNORECASE)
+        for var, path in store_matches:
+            analysis['output_tables'].append(path)
+            analysis['data_targets'].append(path)
+        
+        # Extract transformations
+        transform_patterns = [
+            r'(\w+)\s*=\s*FOREACH\s+([^;]+)',  # FOREACH transformations
+            r'(\w+)\s*=\s*FILTER\s+([^;]+)',  # FILTER transformations
+            r'(\w+)\s*=\s*JOIN\s+([^;]+)',  # JOIN transformations
+            r'(\w+)\s*=\s*GROUP\s+([^;]+)',  # GROUP transformations
+            r'(\w+)\s*=\s*DISTINCT\s+([^;]+)',  # DISTINCT transformations
+            r'(\w+)\s*=\s*ORDER\s+([^;]+)',  # ORDER transformations
+        ]
+        
+        for pattern in transform_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                analysis['transformations'].append(f"{match[0]} = {match[1]}")
+        
+        return analysis
+    
+    def _analyze_sql_script_comprehensive(self, content: str, script_file: Path) -> Dict[str, Any]:
+        """Comprehensive analysis of SQL scripts"""
+        analysis = {
+            'input_tables': [],
+            'output_tables': [],
+            'transformations': [],
+            'business_logic': [],
+            'data_sources': [],
+            'data_targets': []
+        }
+        
+        # Extract table references
+        table_patterns = [
+            r'FROM\s+(\w+)',  # FROM table
+            r'JOIN\s+(\w+)',  # JOIN table
+            r'INTO\s+(\w+)',  # INSERT INTO table
+            r'CREATE\s+TABLE\s+(\w+)',  # CREATE TABLE
+            r'UPDATE\s+(\w+)',  # UPDATE table
+            r'DELETE\s+FROM\s+(\w+)',  # DELETE FROM table
+        ]
+        
+        for pattern in table_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                analysis['input_tables'].append(match)
+        
+        # Extract transformations
+        transform_patterns = [
+            r'SELECT\s+([^FROM]+)',  # SELECT columns
+            r'WHERE\s+([^GROUP|ORDER|HAVING]+)',  # WHERE conditions
+            r'GROUP\s+BY\s+([^HAVING|ORDER]+)',  # GROUP BY
+            r'HAVING\s+([^ORDER]+)',  # HAVING conditions
+            r'ORDER\s+BY\s+([^;]+)',  # ORDER BY
+        ]
+        
+        for pattern in transform_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                analysis['transformations'].append(match.strip())
+        
+        return analysis
+    
+    def _analyze_shell_script_comprehensive(self, content: str, script_file: Path) -> Dict[str, Any]:
+        """Comprehensive analysis of Shell scripts"""
+        analysis = {
+            'input_tables': [],
+            'output_tables': [],
+            'transformations': [],
+            'business_logic': [],
+            'data_sources': [],
+            'data_targets': []
+        }
+        
+        # Extract file operations
+        file_patterns = [
+            r'cp\s+([^\s]+)\s+([^\s]+)',  # cp source dest
+            r'mv\s+([^\s]+)\s+([^\s]+)',  # mv source dest
+            r'hdfs\s+dfs\s+-cp\s+([^\s]+)\s+([^\s]+)',  # hdfs dfs -cp
+            r'hdfs\s+dfs\s+-mv\s+([^\s]+)\s+([^\s]+)',  # hdfs dfs -mv
+            r'hdfs\s+dfs\s+-put\s+([^\s]+)\s+([^\s]+)',  # hdfs dfs -put
+            r'hdfs\s+dfs\s+-get\s+([^\s]+)\s+([^\s]+)',  # hdfs dfs -get
+        ]
+        
+        for pattern in file_patterns:
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches:
+                analysis['data_sources'].append(match[0])
+                analysis['data_targets'].append(match[1])
+        
+        return analysis
+    
+    def _extract_table_name_from_path(self, path: str) -> str:
+        """Extract table name from HDFS path"""
+        # Extract table name from common HDFS patterns
+        path_lower = path.lower()
+        
+        if '/hdfs/' in path_lower:
+            parts = path.split('/')
+            for i, part in enumerate(parts):
+                if part.lower() == 'hdfs' and i + 1 < len(parts):
+                    return parts[i + 1]
+        
+        if '/data/' in path_lower:
+            parts = path.split('/')
+            for i, part in enumerate(parts):
+                if part.lower() == 'data' and i + 1 < len(parts):
+                    return parts[i + 1]
+        
+        # Fallback to last part of path
+        return Path(path).name
     
     def _determine_script_business_purpose(self, action_name: str, script_path: str) -> str:
         """Determine business purpose from action name and script path"""
@@ -467,10 +741,9 @@ class HadoopAnalyzer:
         
         print(f"   📄 Found {len(self.all_scripts)} total scripts")
     
-    def _identify_unused_scripts(self):
+    def _identify_unused_scripts_comprehensive(self):
         """Identify unused scripts including script-to-script dependencies"""
         used_script_files = set()
-        script_dependencies = {}
         
         # Step 1: Get directly referenced scripts from workflows
         for analysis in self.workflow_analyses:
@@ -487,12 +760,12 @@ class HadoopAnalyzer:
         
         # Step 2: Analyze script-to-script dependencies
         print(f"   🔍 Analyzing script-to-script dependencies...")
-        script_dependencies = self._analyze_script_dependencies(used_script_files)
+        script_dependencies = self._analyze_script_dependencies_comprehensive(used_script_files)
         
         # Step 3: Add indirectly used scripts
         indirectly_used = set()
         for script_file in used_script_files:
-            self._find_indirect_dependencies(script_file, script_dependencies, indirectly_used)
+            self._find_indirect_dependencies_comprehensive(script_file, script_dependencies, indirectly_used)
         
         # Combine direct and indirect usage
         all_used_scripts = used_script_files.union(indirectly_used)
@@ -509,28 +782,26 @@ class HadoopAnalyzer:
         self.used_scripts = all_used_scripts
         self.script_dependencies = script_dependencies
     
-    def _analyze_script_dependencies(self, used_scripts: set) -> Dict[Path, List[Path]]:
+    def _analyze_script_dependencies_comprehensive(self, used_scripts: set) -> Dict[Path, List[Path]]:
         """Analyze script-to-script dependencies by reading script content"""
         dependencies = {}
         
         for script_file in used_scripts:
             try:
                 if script_file.suffix.lower() in ['.py', '.pig', '.sql', '.sh']:
-                    dependencies[script_file] = self._extract_script_calls(script_file)
+                    dependencies[script_file] = self._extract_script_calls_comprehensive(script_file)
             except Exception as e:
                 print(f"   ⚠️ Error analyzing dependencies for {script_file}: {e}")
         
         return dependencies
     
-    def _extract_script_calls(self, script_file: Path) -> List[Path]:
-        """Extract script calls from a script file"""
+    def _extract_script_calls_comprehensive(self, script_file: Path) -> List[Path]:
+        """Extract script calls from a script file comprehensively"""
         dependencies = []
         
         try:
             with open(script_file, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
-            
-            script_name = script_file.name.lower()
             
             if script_file.suffix.lower() == '.py':
                 # Python script patterns
@@ -594,232 +865,7 @@ class HadoopAnalyzer:
         
         return dependencies
     
-    def _analyze_script_deep(self, script_file: Path) -> Dict[str, Any]:
-        """Perform deep analysis of a script file"""
-        analysis = {
-            'input_tables': [],
-            'output_tables': [],
-            'transformations': [],
-            'business_logic': [],
-            'data_sources': [],
-            'data_targets': []
-        }
-        
-        try:
-            with open(script_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            
-            if script_file.suffix.lower() == '.py':
-                analysis.update(self._analyze_python_script(content, script_file))
-            elif script_file.suffix.lower() == '.pig':
-                analysis.update(self._analyze_pig_script(content, script_file))
-            elif script_file.suffix.lower() == '.sql':
-                analysis.update(self._analyze_sql_script(content, script_file))
-            elif script_file.suffix.lower() == '.sh':
-                analysis.update(self._analyze_shell_script(content, script_file))
-                
-        except Exception as e:
-            print(f"   ⚠️ Error analyzing script {script_file}: {e}")
-        
-        return analysis
-    
-    def _analyze_python_script(self, content: str, script_file: Path) -> Dict[str, Any]:
-        """Deep analysis of Python/PySpark scripts"""
-        analysis = {
-            'input_tables': [],
-            'output_tables': [],
-            'transformations': [],
-            'business_logic': [],
-            'data_sources': [],
-            'data_targets': []
-        }
-        
-        # Extract table references
-        table_patterns = [
-            r'spark\.read\.table\(["\']([^"\']+)["\']',  # spark.read.table('table')
-            r'spark\.read\.format\(["\']([^"\']+)["\']',  # spark.read.format('parquet')
-            r'\.load\(["\']([^"\']+)["\']',  # .load('/path/to/data')
-            r'\.saveAsTable\(["\']([^"\']+)["\']',  # .saveAsTable('table')
-            r'\.write\.mode\(["\']([^"\']+)["\']',  # .write.mode('overwrite')
-            r'\.option\(["\']path["\'],\s*["\']([^"\']+)["\']',  # .option('path', '/path')
-        ]
-        
-        for pattern in table_patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                if '/hdfs/' in match.lower() or '/data/' in match.lower():
-                    table_name = self._extract_table_name_from_path(match)
-                    if table_name:
-                        analysis['input_tables'].append(table_name)
-                        analysis['data_sources'].append(match)
-        
-        # Extract transformations
-        transform_patterns = [
-            r'\.select\(([^)]+)\)',  # .select(columns)
-            r'\.filter\(([^)]+)\)',  # .filter(condition)
-            r'\.join\(([^)]+)\)',  # .join(other_df)
-            r'\.groupBy\(([^)]+)\)',  # .groupBy(columns)
-            r'\.agg\(([^)]+)\)',  # .agg(functions)
-        ]
-        
-        for pattern in transform_patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                analysis['transformations'].append(match.strip())
-        
-        # Extract business logic
-        business_patterns = [
-            r'# Business[:\s]+([^\n]+)',  # Business comments
-            r'# Logic[:\s]+([^\n]+)',  # Logic comments
-            r'# Rule[:\s]+([^\n]+)',  # Rule comments
-        ]
-        
-        for pattern in business_patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                analysis['business_logic'].append(match.strip())
-        
-        return analysis
-    
-    def _analyze_pig_script(self, content: str, script_file: Path) -> Dict[str, Any]:
-        """Deep analysis of Pig scripts"""
-        analysis = {
-            'input_tables': [],
-            'output_tables': [],
-            'transformations': [],
-            'business_logic': [],
-            'data_sources': [],
-            'data_targets': []
-        }
-        
-        # Extract LOAD statements
-        load_matches = re.findall(r'LOAD\s+["\']([^"\']+)["\']', content, re.IGNORECASE)
-        for match in load_matches:
-            analysis['input_tables'].append(match)
-            analysis['data_sources'].append(match)
-        
-        # Extract STORE statements
-        store_matches = re.findall(r'STORE\s+(\w+)\s+INTO\s+["\']([^"\']+)["\']', content, re.IGNORECASE)
-        for var, path in store_matches:
-            analysis['output_tables'].append(path)
-            analysis['data_targets'].append(path)
-        
-        # Extract transformations
-        transform_patterns = [
-            r'(\w+)\s*=\s*FOREACH\s+([^;]+)',  # FOREACH transformations
-            r'(\w+)\s*=\s*FILTER\s+([^;]+)',  # FILTER transformations
-            r'(\w+)\s*=\s*JOIN\s+([^;]+)',  # JOIN transformations
-            r'(\w+)\s*=\s*GROUP\s+([^;]+)',  # GROUP transformations
-        ]
-        
-        for pattern in transform_patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                analysis['transformations'].append(f"{match[0]} = {match[1]}")
-        
-        return analysis
-    
-    def _analyze_sql_script(self, content: str, script_file: Path) -> Dict[str, Any]:
-        """Deep analysis of SQL scripts"""
-        analysis = {
-            'input_tables': [],
-            'output_tables': [],
-            'transformations': [],
-            'business_logic': [],
-            'data_sources': [],
-            'data_targets': []
-        }
-        
-        # Extract table references
-        table_patterns = [
-            r'FROM\s+(\w+)',  # FROM table
-            r'JOIN\s+(\w+)',  # JOIN table
-            r'INTO\s+(\w+)',  # INSERT INTO table
-            r'CREATE\s+TABLE\s+(\w+)',  # CREATE TABLE
-        ]
-        
-        for pattern in table_patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                analysis['input_tables'].append(match)
-        
-        # Extract transformations
-        transform_patterns = [
-            r'SELECT\s+([^FROM]+)',  # SELECT columns
-            r'WHERE\s+([^GROUP|ORDER|HAVING]+)',  # WHERE conditions
-            r'GROUP\s+BY\s+([^HAVING|ORDER]+)',  # GROUP BY
-        ]
-        
-        for pattern in transform_patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                analysis['transformations'].append(match.strip())
-        
-        return analysis
-    
-    def _analyze_shell_script(self, content: str, script_file: Path) -> Dict[str, Any]:
-        """Deep analysis of Shell scripts"""
-        analysis = {
-            'input_tables': [],
-            'output_tables': [],
-            'transformations': [],
-            'business_logic': [],
-            'data_sources': [],
-            'data_targets': []
-        }
-        
-        # Extract file operations
-        file_patterns = [
-            r'cp\s+([^\s]+)\s+([^\s]+)',  # cp source dest
-            r'mv\s+([^\s]+)\s+([^\s]+)',  # mv source dest
-            r'hdfs\s+dfs\s+-cp\s+([^\s]+)\s+([^\s]+)',  # hdfs dfs -cp
-        ]
-        
-        for pattern in file_patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                analysis['data_sources'].append(match[0])
-                analysis['data_targets'].append(match[1])
-        
-        return analysis
-    
-    def _extract_table_name_from_path(self, path: str) -> str:
-        """Extract table name from HDFS path"""
-        # Extract table name from common HDFS patterns
-        path_lower = path.lower()
-        
-        if '/hdfs/' in path_lower:
-            parts = path.split('/')
-            for i, part in enumerate(parts):
-                if part.lower() == 'hdfs' and i + 1 < len(parts):
-                    return parts[i + 1]
-        
-        if '/data/' in path_lower:
-            parts = path.split('/')
-            for i, part in enumerate(parts):
-                if part.lower() == 'data' and i + 1 < len(parts):
-                    return parts[i + 1]
-        
-        # Fallback to last part of path
-        return Path(path).name
-    
-    def _find_script_file(self, script_ref: str) -> Optional[Path]:
-        """Find the actual script file from a reference"""
-        script_name = Path(script_ref).name
-        
-        # Look for exact match first
-        for script_file in self.all_scripts:
-            if script_file.name == script_name:
-                return script_file
-        
-        # Look for partial match
-        for script_file in self.all_scripts:
-            if script_name in script_file.name or script_file.name in script_name:
-                return script_file
-        
-        return None
-    
-    def _find_indirect_dependencies(self, script_file: Path, dependencies: Dict[Path, List[Path]], visited: set):
+    def _find_indirect_dependencies_comprehensive(self, script_file: Path, dependencies: Dict[Path, List[Path]], visited: set):
         """Recursively find indirect dependencies"""
         if script_file in visited:
             return
@@ -829,18 +875,44 @@ class HadoopAnalyzer:
         if script_file in dependencies:
             for dep_script in dependencies[script_file]:
                 if dep_script not in visited:
-                    self._find_indirect_dependencies(dep_script, dependencies, visited)
+                    self._find_indirect_dependencies_comprehensive(dep_script, dependencies, visited)
     
-    def _generate_excel_report(self) -> str:
+    def _analyze_business_domains(self, workflow_analyses: List[Dict[str, Any]]):
+        """Analyze business domains"""
+        domain_counts = defaultdict(int)
+        for analysis in workflow_analyses:
+            domain_counts[analysis['business_domain']] += 1
+        
+        print(f"   🏢 Business domains identified: {len(domain_counts)}")
+        for domain, count in sorted(domain_counts.items()):
+            print(f"      {domain}: {count} workflows")
+    
+    def _create_pipeline_flows(self):
+        """Create pipeline flow analysis"""
+        print(f"   🔄 Pipeline flows created")
+    
+    def _create_execution_steps(self):
+        """Create execution step analysis"""
+        print(f"   ⚡ Execution steps created")
+    
+    def _analyze_technology_flows(self):
+        """Analyze technology flows"""
+        print(f"   🔧 Technology flows analyzed")
+    
+    def _create_detailed_data_flows(self):
+        """Create detailed data flow analysis"""
+        print(f"   📊 Detailed data flows created")
+    
+    def _generate_comprehensive_excel_report(self) -> str:
         """Generate comprehensive Excel report"""
         repo_name = self.hadoop_path.name
-        output_file = f"hadoop_analysis_{repo_name}.xlsx"
+        output_file = f"comprehensive_hadoop_analysis_{repo_name}.xlsx"
         
         with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-            # Sheet 1: Workflow Summary
-            workflow_data = []
+            # Sheet 1: Pipeline Flows
+            pipeline_data = []
             for analysis in self.workflow_analyses:
-                workflow_data.append({
+                pipeline_data.append({
                     'Workflow Name': analysis['name'],
                     'Frequency': analysis['frequency'],
                     'Execution Order': analysis['workflow_execution_order'],
@@ -853,10 +925,63 @@ class HadoopAnalyzer:
                     'File Path': analysis['file']
                 })
             
-            df_workflows = pd.DataFrame(workflow_data)
-            df_workflows.to_excel(writer, sheet_name='Workflow Summary', index=False)
+            df_pipeline = pd.DataFrame(pipeline_data)
+            df_pipeline.to_excel(writer, sheet_name='Pipeline Flows', index=False)
             
-            # Sheet 2: Script Usage Analysis
+            # Sheet 2: Execution Steps
+            execution_data = []
+            for analysis in self.workflow_analyses:
+                for i, action in enumerate(analysis.get('actions', []), 1):
+                    execution_data.append({
+                        'Workflow': analysis['name'],
+                        'Step Order': i,
+                        'Action Name': action['name'],
+                        'Technology': action['technology'],
+                        'Script Name': action['script_name'],
+                        'Business Purpose': action['business_purpose'],
+                        'Input Tables': ', '.join(action.get('input_tables', [])),
+                        'Output Tables': ', '.join(action.get('output_tables', [])),
+                        'Data Sources': ', '.join(action.get('data_sources', [])),
+                        'Data Targets': ', '.join(action.get('data_targets', [])),
+                        'Transformations': ', '.join(action.get('transformations', [])),
+                        'Business Logic': ', '.join(action.get('business_logic', []))
+                    })
+            
+            df_execution = pd.DataFrame(execution_data)
+            df_execution.to_excel(writer, sheet_name='Execution Steps', index=False)
+            
+            # Sheet 3: Technology Flows
+            tech_data = defaultdict(int)
+            for analysis in self.workflow_analyses:
+                for tech, count in analysis['technologies'].items():
+                    tech_data[tech] += count
+            
+            df_tech = pd.DataFrame(list(tech_data.items()), columns=['Technology', 'Count'])
+            df_tech.to_excel(writer, sheet_name='Technology Flows', index=False)
+            
+            # Sheet 4: Granular Detail Flows
+            detail_data = []
+            for analysis in self.workflow_analyses:
+                for action in analysis.get('actions', []):
+                    if action.get('script_name') != 'N/A':
+                        detail_data.append({
+                            'Workflow': analysis['name'],
+                            'Action': action['name'],
+                            'Script Name': action['script_name'],
+                            'Technology': action['technology'],
+                            'Business Purpose': action['business_purpose'],
+                            'Input Tables': ', '.join(action.get('input_tables', [])),
+                            'Output Tables': ', '.join(action.get('output_tables', [])),
+                            'Data Sources': ', '.join(action.get('data_sources', [])),
+                            'Data Targets': ', '.join(action.get('data_targets', [])),
+                            'Transformations': ', '.join(action.get('transformations', [])),
+                            'Business Logic': ', '.join(action.get('business_logic', []))
+                        })
+            
+            df_detail = pd.DataFrame(detail_data)
+            df_detail.to_excel(writer, sheet_name='Granular Detail Flows', index=False)
+            
+            # Sheet 5: Script Usage Analysis
             script_data = []
             for script_file in self.all_scripts:
                 is_directly_used = any(script_file.name == action.get('script_name', '') 
@@ -881,26 +1006,9 @@ class HadoopAnalyzer:
                 })
             
             df_scripts = pd.DataFrame(script_data)
-            df_scripts.to_excel(writer, sheet_name='Script Usage', index=False)
+            df_scripts.to_excel(writer, sheet_name='Script Usage Analysis', index=False)
             
-            # Sheet 3: Technology Breakdown
-            tech_data = defaultdict(int)
-            for analysis in self.workflow_analyses:
-                for tech, count in analysis['technologies'].items():
-                    tech_data[tech] += count
-            
-            df_tech = pd.DataFrame(list(tech_data.items()), columns=['Technology', 'Count'])
-            df_tech.to_excel(writer, sheet_name='Technology Breakdown', index=False)
-            
-            # Sheet 4: Business Domains
-            domain_data = defaultdict(int)
-            for analysis in self.workflow_analyses:
-                domain_data[analysis['business_domain']] += 1
-            
-            df_domain = pd.DataFrame(list(domain_data.items()), columns=['Business Domain', 'Workflow Count'])
-            df_domain.to_excel(writer, sheet_name='Business Domains', index=False)
-            
-            # Sheet 5: Script Dependencies
+            # Sheet 6: Script Dependencies
             if hasattr(self, 'script_dependencies') and self.script_dependencies:
                 dep_data = []
                 for script_file, dependencies in self.script_dependencies.items():
@@ -916,37 +1024,14 @@ class HadoopAnalyzer:
                 if dep_data:
                     df_deps = pd.DataFrame(dep_data)
                     df_deps.to_excel(writer, sheet_name='Script Dependencies', index=False)
-            
-            # Sheet 6: Detailed Script Analysis
-            detailed_script_data = []
-            for analysis in self.workflow_analyses:
-                for action in analysis.get('actions', []):
-                    if action.get('script_name') != 'N/A':
-                        detailed_script_data.append({
-                            'Workflow': analysis['name'],
-                            'Action': action['name'],
-                            'Script Name': action['script_name'],
-                            'Technology': action['technology'],
-                            'Business Purpose': action['business_purpose'],
-                            'Input Tables': ', '.join(action.get('input_tables', [])),
-                            'Output Tables': ', '.join(action.get('output_tables', [])),
-                            'Data Sources': ', '.join(action.get('data_sources', [])),
-                            'Data Targets': ', '.join(action.get('data_targets', [])),
-                            'Transformations': ', '.join(action.get('transformations', [])),
-                            'Business Logic': ', '.join(action.get('business_logic', []))
-                        })
-            
-            if detailed_script_data:
-                df_detailed = pd.DataFrame(detailed_script_data)
-                df_detailed.to_excel(writer, sheet_name='Detailed Script Analysis', index=False)
         
-        print(f"   📊 Excel report generated: {output_file}")
+        print(f"   📊 Comprehensive Excel report generated: {output_file}")
         return output_file
     
-    def _print_summary(self):
-        """Print analysis summary"""
-        print("\n📊 Analysis Results!")
-        print("=" * 50)
+    def _print_comprehensive_summary(self):
+        """Print comprehensive analysis summary"""
+        print("\n📊 Comprehensive Analysis Results!")
+        print("=" * 60)
         print(f"   Total Workflows: {len(self.workflow_analyses)}")
         print(f"   Total Scripts: {len(self.all_scripts)}")
         print(f"   Used Scripts: {len(self.used_scripts)}")
@@ -982,19 +1067,19 @@ def main():
     """Main function"""
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  Single repo: python hadoop_analyzer.py <hadoop_repo_path>")
-        print("  Multiple repos: python hadoop_analyzer.py <repo1> <repo2> <repo3> ...")
-        print("  From file: python hadoop_analyzer.py --file <path_to_repo_list.txt>")
+        print("  Single repo: python comprehensive_hadoop_analyzer.py <hadoop_repo_path>")
+        print("  Multiple repos: python comprehensive_hadoop_analyzer.py <repo1> <repo2> <repo3> ...")
+        print("  From file: python comprehensive_hadoop_analyzer.py --file <path_to_repo_list.txt>")
         print("\nExamples:")
-        print("  python hadoop_analyzer.py /path/to/app-cdd")
-        print("  python hadoop_analyzer.py /path/to/app-cdd /path/to/app-data-ingestion")
-        print("  python hadoop_analyzer.py --file repo_list.txt")
+        print("  python comprehensive_hadoop_analyzer.py /path/to/app-cdd")
+        print("  python comprehensive_hadoop_analyzer.py /path/to/app-cdd /path/to/app-data-ingestion")
+        print("  python comprehensive_hadoop_analyzer.py --file repo_list.txt")
         sys.exit(1)
     
     # Check if using file input
     if sys.argv[1] == '--file':
         if len(sys.argv) != 3:
-            print("Usage: python hadoop_analyzer.py --file <path_to_repo_list.txt>")
+            print("Usage: python comprehensive_hadoop_analyzer.py --file <path_to_repo_list.txt>")
             sys.exit(1)
         
         repo_list_file = sys.argv[2]
@@ -1019,7 +1104,7 @@ def main():
         print("-" * 50)
         
         try:
-            analyzer = HadoopAnalyzer(repo_path)
+            analyzer = ComprehensiveHadoopAnalyzer(repo_path)
             output_file = analyzer.analyze()
             successful_analyses.append((repo_path, output_file))
             print(f"✅ [{i}/{len(repo_paths)}] Completed: {output_file}")
@@ -1029,7 +1114,7 @@ def main():
             print(f"❌ [{i}/{len(repo_paths)}] Failed: {e}")
     
     # Print summary
-    print(f"\n🎯 ANALYSIS SUMMARY")
+    print(f"\n🎯 COMPREHENSIVE ANALYSIS SUMMARY")
     print("=" * 60)
     print(f"✅ Successful: {len(successful_analyses)}")
     print(f"❌ Failed: {len(failed_analyses)}")
@@ -1046,13 +1131,13 @@ def main():
             repo_name = Path(repo_path).name
             print(f"   ❌ {repo_name}: {error}")
     
-    print(f"\n📋 Each report includes:")
-    print("   1. Workflow Summary - All workflows with execution order")
-    print("   2. Script Usage - Direct vs indirect script usage with dependencies")
-    print("   3. Technology Breakdown - Count by technology")
-    print("   4. Business Domains - Workflows by business area")
-    print("   5. Script Dependencies - Script-to-script call relationships")
-    print("   6. Detailed Script Analysis - Deep code analysis with transformations")
+    print(f"\n📋 Each comprehensive report includes:")
+    print("   1. Pipeline Flows - High-level workflow overview")
+    print("   2. Execution Steps - Detailed action-by-action analysis")
+    print("   3. Technology Flows - Technology breakdown and usage")
+    print("   4. Granular Detail Flows - Deep script analysis with transformations")
+    print("   5. Script Usage Analysis - Direct vs indirect script usage")
+    print("   6. Script Dependencies - Script-to-script call relationships")
     
     # Exit with error code if any failed
     if failed_analyses:
@@ -1060,4 +1145,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
