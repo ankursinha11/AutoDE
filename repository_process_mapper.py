@@ -906,52 +906,17 @@ class RepositoryAnalyzer:
             return "Weak Match - Manual Review"
     
     def format_sheet(self, ws):
-        """Format Excel sheet with headers and styling"""
-        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
-        header_alignment = Alignment(horizontal="center", vertical="center")
-        
-        # Format header row (skip merged cells)
-        for cell in ws[1]:
-            if hasattr(cell, 'value') and cell.value is not None:
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = header_alignment
-        
-        # Auto-adjust column widths (handle merged cells)
-        for column in ws.columns:
-            max_length = 0
-            column_letter = None
-            
-            # Find the first non-merged cell to get column letter
-            for cell in column:
-                if hasattr(cell, 'column_letter'):
-                    column_letter = cell.column_letter
-                    break
-            
-            if column_letter:
-                for cell in column:
-                    try:
-                        if hasattr(cell, 'value') and cell.value is not None:
-                            if len(str(cell.value)) > max_length:
-                                max_length = len(str(cell.value))
-                    except:
-                        pass
-                adjusted_width = min(max_length + 2, 50)
-                ws.column_dimensions[column_letter].width = adjusted_width
-        
-        # Add borders (skip merged cells)
-        thin_border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
-        
-        for row in ws.iter_rows():
-            for cell in row:
-                if hasattr(cell, 'value') and cell.value is not None:
-                    cell.border = thin_border
+        """Format Excel sheet with headers and styling - simplified to avoid MergedCell issues"""
+        try:
+            # Just set basic column widths without complex formatting
+            for col_idx in range(1, ws.max_column + 1):
+                try:
+                    column_letter = ws.cell(row=1, column=col_idx).column_letter
+                    ws.column_dimensions[column_letter].width = 20
+                except:
+                    pass
+        except Exception as e:
+            print(f"    ⚠️ Warning: Could not format sheet: {e}")
 
 def main():
     """Main function to run the enhanced repository analyzer"""
