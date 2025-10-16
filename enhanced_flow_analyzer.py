@@ -314,6 +314,8 @@ class HadoopPipelineConsolidator:
             pig_patterns = [
                 './/{uri:oozie:pig-action:0.1}pig',
                 './/{uri:oozie:pig-action:0.2}pig',
+                './/{uri:oozie:workflow:0.5}pig',
+                './/{uri:oozie:workflow:0.2}pig',
                 './/pig'
             ]
             
@@ -329,6 +331,8 @@ class HadoopPipelineConsolidator:
                 script_patterns = [
                     '{uri:oozie:pig-action:0.1}script',
                     '{uri:oozie:pig-action:0.2}script',
+                    '{uri:oozie:workflow:0.5}script',
+                    '{uri:oozie:workflow:0.2}script',
                     'script'
                 ]
                 
@@ -342,19 +346,19 @@ class HadoopPipelineConsolidator:
                     script_path = script_elem.text or "N/A"
             
             # Check for Spark actions with multiple namespace patterns
-            elif True:  # Only check Spark if Pig not found
+            if pig_elem is None:  # Only check Spark if Pig not found
                 spark_patterns = [
                     './/{uri:oozie:spark-action:0.1}spark',
                     './/{uri:oozie:spark-action:0.2}spark',
                     './/{uri:oozie:spark-action:0.3}spark',
                     './/spark'
                 ]
-            
-            spark_elem = None
-            for pattern in spark_patterns:
-                spark_elem = action_elem.find(pattern)
-                if spark_elem is not None:
-                    break
+                
+                spark_elem = None
+                for pattern in spark_patterns:
+                    spark_elem = action_elem.find(pattern)
+                    if spark_elem is not None:
+                        break
             
             if spark_elem is not None:
                 technology = "Spark"
@@ -865,11 +869,20 @@ class HadoopPipelineConsolidator:
         ws.append(headers)
         
         # Create mapping for each ADF pipeline
+        mapped_count = 0
+        unmapped_count = 0
+        
         for adf_pipeline in adf_pipelines:
             mapping_result = self.find_dynamic_matching_hadoop_pipeline(
                 adf_pipeline["pipeline_name"], 
                 adf_pipeline["category"]
             )
+            
+            # Count mapped vs unmapped
+            if "✅" in mapping_result['status'] or "🔍" in mapping_result['status']:
+                mapped_count += 1
+            else:
+                unmapped_count += 1
             
             row = [
                 adf_pipeline["category"],
@@ -882,6 +895,29 @@ class HadoopPipelineConsolidator:
                 mapping_result["notes"]
             ]
             ws.append(row)
+        
+        # Add summary section
+        ws.append([])
+        ws.append(["MAPPING SUMMARY:"])
+        ws.append([f"Total ADF Pipelines: {len(adf_pipelines)}"])
+        ws.append([f"Successfully Mapped: {mapped_count}"])
+        ws.append([f"Not Mapped: {unmapped_count}"])
+        ws.append([f"Mapping Success Rate: {(mapped_count/len(adf_pipelines)*100):.1f}%"])
+        
+        # Add repository breakdown
+        ws.append([])
+        ws.append(["HADOOP REPOSITORY BREAKDOWN:"])
+        repo_counts = {}
+        for adf_pipeline in adf_pipelines:
+            mapping_result = self.find_dynamic_matching_hadoop_pipeline(
+                adf_pipeline["pipeline_name"], 
+                adf_pipeline["category"]
+            )
+            repo = mapping_result["hadoop_repo"]
+            repo_counts[repo] = repo_counts.get(repo, 0) + 1
+        
+        for repo, count in sorted(repo_counts.items()):
+            ws.append([f"{repo}: {count} ADF pipelines"])
         
         self.format_sheet(ws)
     
@@ -901,10 +937,42 @@ class HadoopPipelineConsolidator:
             "maintainance": "app-data-ingestion",
             "hintsdiscovery": "app-ops-hints",
             "hfc": "app-lead-repository",
-            "chc": "app-data-ingestion"
+            "chc": "app-data-ingestion",
+            "blacklisted": "app-data-ingestion",
+            "copy": "app-data-ingestion",
+            "test": "app-data-ingestion",
+            "mh (lead repository)": "app-lead-repository",
+            "chc (lead repository)": "app-lead-repository"
         }
         
         expected_repo = repo_mapping.get(category.lower(), "Unknown")
+        
+        # If no exact match, try fuzzy matching
+        if expected_repo == "Unknown":
+            for mapped_category, repo in repo_mapping.items():
+                if category.lower() in mapped_category or mapped_category in category.lower():
+                    expected_repo = repo
+                    break
+        
+        # If still no match, try to infer from pipeline name
+        if expected_repo == "Unknown":
+            pipeline_lower = adf_pipeline_name.lower()
+            if 'dataingestion' in pipeline_lower or 'ingest' in pipeline_lower:
+                expected_repo = 'app-data-ingestion'
+            elif 'cdd' in pipeline_lower:
+                expected_repo = 'app-cdd'
+            elif 'gmrn' in pipeline_lower or 'globalmrn' in pipeline_lower:
+                expected_repo = 'app-globalmrn'
+            elif 'lead' in pipeline_lower and 'discovery' in pipeline_lower:
+                expected_repo = 'app-lead-discovery'
+            elif 'lead' in pipeline_lower and 'repository' in pipeline_lower:
+                expected_repo = 'app-lead-repository'
+            elif 'lead' in pipeline_lower and 'service' in pipeline_lower:
+                expected_repo = 'app-lead-service-base'
+            elif 'coverage' in pipeline_lower or 'helper' in pipeline_lower:
+                expected_repo = 'app-coverage-helpers'
+            elif 'hints' in pipeline_lower or 'ops' in pipeline_lower:
+                expected_repo = 'app-ops-hints'
         
         # Check if we have this repository analyzed
         if expected_repo not in self.repo_summary:
