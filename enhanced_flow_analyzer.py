@@ -975,6 +975,53 @@ class HadoopPipelineConsolidator:
             "notes": notes
         }
     
+    def create_adf_mapping_template(self, wb):
+        """Create ADF Pipeline Mapping Template sheet"""
+        ws = wb.create_sheet("ADF_Mapping_Template")
+        
+        # Add title
+        ws['A1'] = "ADF Pipeline Mapping Template"
+        ws['A1'].font = Font(size=16, bold=True)
+        
+        headers = [
+            "Category", "ADF Pipeline Name", "Hadoop Repository", 
+            "Mapped Oozie Workflow", "Mapped Oozie Coordinator", 
+            "Mapping Status", "Confidence Level", "Notes"
+        ]
+        ws.append(headers)
+        
+        # Add instructions
+        ws.append([])
+        ws.append(["INSTRUCTIONS:"])
+        ws.append(["1. Add your complete ADF pipeline list in Column B"])
+        ws.append(["2. Add categories in Column A"])
+        ws.append(["3. The script will auto-populate Hadoop mappings"])
+        ws.append([])
+        
+        # Add sample entries based on what we know
+        sample_pipelines = [
+            ["dataingestion", "pl_dataingestion_big_tables", "app-data-ingestion", "big_tables_workflow.xml", "N/A", "✅ FOUND", "High", "Direct match"],
+            ["dataingestion", "pl_dataingestion_fnf", "app-data-ingestion", "sqoop_fnf_workflow.xml", "N/A", "✅ FOUND", "High", "Direct match"],
+            ["cdd", "pl_cdd_es_prebdf", "app-cdd", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"],
+            ["gmrn", "pl_gmrn_ghic", "app-globalmrn", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"],
+            ["leaddiscovery", "pl_leaddiscovery_globalmrn_assign", "app-lead-discovery", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"]
+        ]
+        
+        for pipeline in sample_pipelines:
+            ws.append(pipeline)
+        
+        ws.append([])
+        ws.append(["TOTAL COUNTS FROM CURRENT ANALYSIS:"])
+        total_workflows = sum(1 for p in self.all_pipelines if p['pipeline_type'] == 'Workflow')
+        total_coordinators = sum(1 for p in self.all_pipelines if p['pipeline_type'] == 'Coordinator')
+        total_pipelines = total_workflows + total_coordinators
+        
+        ws.append([f"Total Oozie Workflows: {total_workflows}"])
+        ws.append([f"Total Oozie Coordinators: {total_coordinators}"])
+        ws.append([f"Total Oozie Pipelines: {total_pipelines}"])
+        
+        self.format_sheet(ws)
+    
     def format_sheet(self, ws):
         """Format Excel sheet with basic styling"""
         try:
