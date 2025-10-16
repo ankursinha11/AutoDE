@@ -1,959 +1,721 @@
 import os
 import re
-import json
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from pathlib import Path
-import ast
-import sqlparse
-from collections import defaultdict
 import xml.etree.ElementTree as ET
-import sys
+from collections import defaultdict, Counter
+import json
 
-class EnhancedFlowAnalyzer:
+class HadoopPipelineConsolidator:
     """
-    Enhanced analyzer that understands execution flow, dependencies, and detailed logic
+    Consolidates all Hadoop repository pipelines into a single comprehensive Excel report
     """
     
     def __init__(self):
-        self.hadoop_processes = []
-        self.databricks_processes = []
-        self.execution_flows = {}
-        self.dependencies = {}
-        self.business_logic_patterns = {
-            'permid': ['permid', 'person_id', 'personid', 'tu_id', 'transunion'],
-            'coverage': ['coverage', 'insurance', 'policy', 'payer', 'benefit'],
-            'patient': ['patient', 'demographic', 'demographics', 'patientacct'],
-            'address': ['address', 'addr', 'location', 'zip', 'city', 'state'],
-            'phone': ['phone', 'telephone', 'contact'],
-            'family': ['family', 'household', 'member', 'dependent', 'subscriber'],
-            'lead': ['lead', 'discovery', 'generation', 'propagation'],
-            'validation': ['validate', 'validation', 'check', 'verify'],
-            'transformation': ['transform', 'convert', 'map', 'process'],
-            'merge': ['merge', 'join', 'combine', 'union'],
-            'filter': ['filter', 'where', 'condition', 'criteria'],
-            'group': ['group', 'aggregate', 'sum', 'count', 'avg'],
-            'sort': ['sort', 'order', 'rank'],
-            'dedupe': ['dedupe', 'distinct', 'unique', 'duplicate'],
-            'cm2': ['cm2', 'matching', 'pass', 'stage'],
-            'bdf': ['bdf', 'batch', 'data', 'file'],
-            'prebdf': ['prebdf', 'pre', 'before', 'preparation'],
-            'postbdf': ['postbdf', 'post', 'after', 'processing']
+        self.all_pipelines = []
+        self.all_actions = []
+        self.technology_counts = Counter()
+        self.pipeline_counts = Counter()
+        self.repo_summary = {}
+        
+    def find_all_hadoop_repos(self, base_path):
+        """Find all Hadoop repositories in the base path"""
+        base_path = Path(base_path)
+        hadoop_repos = []
+        
+        # Look for directories starting with 'app-'
+        for item in base_path.iterdir():
+            if item.is_dir() and item.name.startswith('app-'):
+                hadoop_repos.append(item)
+        
+        return hadoop_repos
+    
+    def analyze_single_repository(self, repo_path):
+        """Analyze a single Hadoop repository"""
+        repo_path = Path(repo_path)
+        repo_name = repo_path.name
+        
+        print(f"\n🔍 Analyzing repository: {repo_name}")
+        print(f"  📁 Repository path: {repo_path}")
+        
+        # Find Oozie workflows and coordinators
+        workflows = self.find_oozie_workflows(repo_path)
+        coordinators = self.find_oozie_coordinators(repo_path)
+        
+        print(f"  📄 Found {len(workflows)} workflows and {len(coordinators)} coordinators")
+        
+        # Show specific files found for debugging
+        if workflows:
+            print(f"  📋 Workflow files:")
+            for wf in workflows:
+                print(f"    - {wf.relative_to(repo_path)}")
+        
+        if coordinators:
+            print(f"  📋 Coordinator files:")
+            for coord in coordinators:
+                print(f"    - {coord.relative_to(repo_path)}")
+        
+        repo_stats = {
+            'repo_name': repo_name,
+            'workflows': len(workflows),
+            'coordinators': len(coordinators),
+            'total_pipelines': len(workflows) + len(coordinators)
         }
+        
+        # Analyze workflows
+        for workflow_file in workflows:
+            pipeline_info = self.analyze_workflow(workflow_file, repo_name)
+            if pipeline_info:
+                self.all_pipelines.append(pipeline_info)
+                self.all_actions.extend(pipeline_info.get('actions', []))
+                self.pipeline_counts[repo_name] += 1
+        
+        # Analyze coordinators
+        for coordinator_file in coordinators:
+            coordinator_info = self.analyze_coordinator(coordinator_file, repo_name)
+            if coordinator_info:
+                self.all_pipelines.append(coordinator_info)
+                self.pipeline_counts[repo_name] += 1
+        
+        self.repo_summary[repo_name] = repo_stats
+        
+        print(f"  ✅ Analyzed {repo_stats['total_pipelines']} pipelines")
+        
+        return repo_stats
     
-    def analyze_hadoop_execution_flow(self, hadoop_path):
-        """Analyze Hadoop execution flow from workflow files and scripts"""
-        print(f"Analyzing Hadoop execution flow: {hadoop_path}")
+    def find_oozie_workflows(self, repo_path):
+        """Find all Oozie workflow files"""
+        workflows = []
         
-        hadoop_path = Path(hadoop_path)
+        # Look for workflow.xml files in various locations - comprehensive coverage
+        patterns = [
+            "**/workflow.xml",                    # Any workflow.xml anywhere
+            "**/oozie/**/workflow.xml",           # CDD-style nested oozie folders
+            "**/workflows/**/workflow.xml",       # Standard workflows folder
+            "**/workflows/**/oozie/workflow.xml", # Nested oozie in workflows
+            "**/coordinators/**/workflow.xml",    # Workflows in coordinators folder
+            "**/jobs/**/workflow.xml",            # Workflows in jobs folder
+            "**/pipelines/**/workflow.xml",       # Workflows in pipelines folder
+            "**/processes/**/workflow.xml",       # Workflows in processes folder
+            "**/etl/**/workflow.xml",             # Workflows in etl folder
+            "**/data/**/workflow.xml",            # Workflows in data folder
+            "**/ingestion/**/workflow.xml",       # Workflows in ingestion folder
+            "**/processing/**/workflow.xml",      # Workflows in processing folder
+            "**/batch/**/workflow.xml",          # Workflows in batch folder
+            "**/streaming/**/workflow.xml",      # Workflows in streaming folder
+            "**/realtime/**/workflow.xml",       # Workflows in realtime folder
+            "**/scheduled/**/workflow.xml",      # Workflows in scheduled folder
+            "**/automated/**/workflow.xml",      # Workflows in automated folder
+            "**/manual/**/workflow.xml",         # Workflows in manual folder
+            "**/adhoc/**/workflow.xml",          # Workflows in adhoc folder
+            "**/temp/**/workflow.xml",           # Workflows in temp folder
+            "**/test/**/workflow.xml",           # Workflows in test folder
+            "**/dev/**/workflow.xml",            # Workflows in dev folder
+            "**/prod/**/workflow.xml",           # Workflows in prod folder
+            "**/staging/**/workflow.xml",        # Workflows in staging folder
+            "**/qa/**/workflow.xml"              # Workflows in qa folder
+        ]
         
-        # First, analyze workflow files to understand execution order
-        workflow_files = list(hadoop_path.rglob("*workflow*.xml"))
-        for workflow_file in workflow_files:
-            self.analyze_oozie_workflow(workflow_file)
+        for pattern in patterns:
+            found_files = list(repo_path.rglob(pattern))
+            if found_files:
+                print(f"    Pattern '{pattern}': Found {len(found_files)} files")
+                workflows.extend(found_files)
         
-        # Analyze coordinator files for scheduling
-        coordinator_files = list(hadoop_path.rglob("*coordinator*.xml"))
-        for coordinator_file in coordinator_files:
-            self.analyze_oozie_coordinator(coordinator_file)
+        unique_workflows = list(set(workflows))  # Remove duplicates
+        print(f"    Total unique workflows found: {len(unique_workflows)}")
         
-        # Then analyze individual scripts
-        pig_files = list(hadoop_path.rglob("*.pig"))
-        for pig_file in pig_files:
-            process = self.analyze_pig_script_detailed(pig_file)
-            if process:
-                self.hadoop_processes.append(process)
-        
-        py_files = list(hadoop_path.rglob("*.py"))
-        for py_file in py_files:
-            process = self.analyze_pyspark_script_detailed(py_file)
-            if process:
-                self.hadoop_processes.append(process)
-        
-        # Build execution flow
-        self.build_hadoop_execution_flow()
-        
-        print(f"Found {len(self.hadoop_processes)} Hadoop processes")
+        return unique_workflows
     
-    def analyze_databricks_execution_flow(self, databricks_path):
-        """Analyze Databricks execution flow from pipeline files and notebooks"""
-        print(f"Analyzing Databricks execution flow: {databricks_path}")
+    def find_oozie_coordinators(self, repo_path):
+        """Find all Oozie coordinator files"""
+        coordinators = []
         
-        databricks_path = Path(databricks_path)
+        # Look for coordinator.xml files - comprehensive coverage
+        patterns = [
+            "**/coordinator.xml",                    # Any coordinator.xml anywhere
+            "**/coordinators/**/coordinator.xml",    # Standard coordinators folder
+            "**/oozie/**/coordinator.xml",           # CDD-style nested oozie folders
+            "**/workflows/**/coordinator.xml",       # Coordinators in workflows folder
+            "**/jobs/**/coordinator.xml",            # Coordinators in jobs folder
+            "**/pipelines/**/coordinator.xml",       # Coordinators in pipelines folder
+            "**/processes/**/coordinator.xml",       # Coordinators in processes folder
+            "**/etl/**/coordinator.xml",             # Coordinators in etl folder
+            "**/data/**/coordinator.xml",            # Coordinators in data folder
+            "**/ingestion/**/coordinator.xml",       # Coordinators in ingestion folder
+            "**/processing/**/coordinator.xml",      # Coordinators in processing folder
+            "**/batch/**/coordinator.xml",          # Coordinators in batch folder
+            "**/streaming/**/coordinator.xml",      # Coordinators in streaming folder
+            "**/realtime/**/coordinator.xml",       # Coordinators in realtime folder
+            "**/scheduled/**/coordinator.xml",      # Coordinators in scheduled folder
+            "**/automated/**/coordinator.xml",      # Coordinators in automated folder
+            "**/manual/**/coordinator.xml",         # Coordinators in manual folder
+            "**/adhoc/**/coordinator.xml",          # Coordinators in adhoc folder
+            "**/temp/**/coordinator.xml",           # Coordinators in temp folder
+            "**/test/**/coordinator.xml",           # Coordinators in test folder
+            "**/dev/**/coordinator.xml",            # Coordinators in dev folder
+            "**/prod/**/coordinator.xml",           # Coordinators in prod folder
+            "**/staging/**/coordinator.xml",        # Coordinators in staging folder
+            "**/qa/**/coordinator.xml"              # Coordinators in qa folder
+        ]
         
-        # Look for pipeline definition files
-        pipeline_files = list(databricks_path.rglob("*pipeline*.json"))
-        for pipeline_file in pipeline_files:
-            self.analyze_databricks_pipeline(pipeline_file)
+        for pattern in patterns:
+            found_files = list(repo_path.rglob(pattern))
+            if found_files:
+                print(f"    Pattern '{pattern}': Found {len(found_files)} files")
+                coordinators.extend(found_files)
         
-        # Look for workflow files
-        workflow_files = list(databricks_path.rglob("*workflow*.json"))
-        for workflow_file in workflow_files:
-            self.analyze_databricks_workflow(workflow_file)
+        unique_coordinators = list(set(coordinators))  # Remove duplicates
+        print(f"    Total unique coordinators found: {len(unique_coordinators)}")
         
-        # Analyze notebooks
-        py_files = list(databricks_path.rglob("*.py"))
-        for py_file in py_files:
-            process = self.analyze_databricks_notebook_detailed(py_file)
-            if process:
-                self.databricks_processes.append(process)
-        
-        sql_files = list(databricks_path.rglob("*.sql"))
-        for sql_file in sql_files:
-            process = self.analyze_databricks_sql_detailed(sql_file)
-            if process:
-                self.databricks_processes.append(process)
-        
-        # Build execution flow
-        self.build_databricks_execution_flow()
-        
-        print(f"Found {len(self.databricks_processes)} Databricks processes")
+        return unique_coordinators
     
-    def analyze_oozie_workflow(self, workflow_file):
-        """Analyze Oozie workflow XML to understand execution order"""
+    def analyze_workflow(self, workflow_file, repo_name):
+        """Analyze an Oozie workflow file"""
         try:
             tree = ET.parse(workflow_file)
             root = tree.getroot()
             
-            workflow_name = root.get('name', 'Unknown')
-            execution_order = []
+            # Extract workflow name
+            workflow_name = root.get('name', workflow_file.stem)
             
-            # Extract start node
-            start_node = root.find('.//start')
-            if start_node is not None:
-                execution_order.append(start_node.get('to'))
+            # Extract actions
+            actions = self.extract_workflow_actions(root, workflow_file)
             
-            # Extract action sequence
-            actions = root.findall('.//action')
-            for action in actions:
-                action_name = action.get('name')
-                ok_node = action.find('ok')
-                if ok_node is not None:
-                    next_action = ok_node.get('to')
-                    execution_order.append((action_name, next_action))
+            # Determine processing order
+            processing_order = self.determine_processing_order(actions)
             
-            # Extract forks and joins
-            forks = root.findall('.//fork')
-            for fork in forks:
-                fork_name = fork.get('name')
-                paths = [path.get('start') for path in fork.findall('.//path')]
-                execution_order.append(('fork', fork_name, paths))
+            # Count technologies
+            technologies = [action['technology'] for action in actions]
+            tech_counts = Counter(technologies)
             
-            joins = root.findall('.//join')
-            for join in joins:
-                join_name = join.get('name')
-                execution_order.append(('join', join_name))
-            
-            self.execution_flows[workflow_name] = {
-                'type': 'Oozie Workflow',
-                'file': str(workflow_file),
-                'execution_order': execution_order
+            pipeline_info = {
+                'repo_name': repo_name,
+                'pipeline_name': workflow_name,
+                'pipeline_type': 'Workflow',
+                'file_path': str(workflow_file.relative_to(workflow_file.parents[2])),
+                'actions': actions,
+                'processing_order': processing_order,
+                'technologies': technologies,
+                'technology_counts': dict(tech_counts),
+                'total_actions': len(actions)
             }
             
+            # Update global technology counts
+            for tech in technologies:
+                self.technology_counts[tech] += 1
+            
+            return pipeline_info
+            
         except Exception as e:
-            print(f"Error analyzing Oozie workflow {workflow_file}: {e}")
+            print(f"    ⚠️ Error analyzing workflow {workflow_file}: {e}")
+            return None
     
-    def analyze_oozie_coordinator(self, coordinator_file):
-        """Analyze Oozie coordinator XML to understand scheduling"""
+    def analyze_coordinator(self, coordinator_file, repo_name):
+        """Analyze an Oozie coordinator file"""
         try:
             tree = ET.parse(coordinator_file)
             root = tree.getroot()
             
-            coordinator_name = root.get('name', 'Unknown')
-            frequency = root.get('frequency', 'Unknown')
-            start_time = root.get('start', 'Unknown')
-            end_time = root.get('end', 'Unknown')
+            # Extract coordinator name
+            coordinator_name = root.get('name', coordinator_file.stem)
             
-            # Extract workflow path
-            workflow_elem = root.find('.//workflow/app-path')
-            workflow_path = workflow_elem.text if workflow_elem is not None else 'Unknown'
+            # Extract workflow reference
+            workflow_ref = self.extract_workflow_reference(root)
             
-            self.execution_flows[coordinator_name] = {
-                'type': 'Oozie Coordinator',
-                'file': str(coordinator_file),
-                'frequency': frequency,
-                'start_time': start_time,
-                'end_time': end_time,
-                'workflow_path': workflow_path
+            coordinator_info = {
+                'repo_name': repo_name,
+                'pipeline_name': coordinator_name,
+                'pipeline_type': 'Coordinator',
+                'file_path': str(coordinator_file.relative_to(coordinator_file.parents[2])),
+                'workflow_reference': workflow_ref,
+                'actions': [],
+                'processing_order': [],
+                'technologies': [],
+                'technology_counts': {},
+                'total_actions': 0
             }
             
+            return coordinator_info
+            
         except Exception as e:
-            print(f"Error analyzing Oozie coordinator {coordinator_file}: {e}")
+            print(f"    ⚠️ Error analyzing coordinator {coordinator_file}: {e}")
+            return None
     
-    def analyze_databricks_pipeline(self, pipeline_file):
-        """Analyze Databricks pipeline JSON to understand execution order"""
+    def extract_workflow_reference(self, root):
+        """Extract workflow reference from coordinator"""
         try:
-            with open(pipeline_file, 'r', encoding='utf-8') as f:
-                pipeline_data = json.load(f)
+            # Look for workflow action
+            workflow_elem = root.find('.//{uri:oozie:coordinator:0.2}workflow')
+            if workflow_elem is not None:
+                app_path = workflow_elem.find('{uri:oozie:coordinator:0.2}app-path')
+                if app_path is not None:
+                    return app_path.text
+        except:
+            pass
+        
+        # Fallback: look for any workflow reference
+        for elem in root.iter():
+            if 'workflow' in elem.tag.lower() and elem.text:
+                return elem.text
+        
+        return "N/A"
+    
+    def extract_workflow_actions(self, root, workflow_file):
+        """Extract actions from workflow"""
+        actions = []
+        
+        # Handle different namespace patterns
+        namespaces = [
+            '{uri:oozie:workflow:0.5}',
+            '{uri:oozie:workflow:0.2}',
+            '{uri:oozie:workflow:0.1}',
+            '{uri:oozie:workflow:0.3}',
+            '{uri:oozie:workflow:0.4}',
+            ''
+        ]
+        
+        action_elements = []
+        for ns in namespaces:
+            action_elements = root.findall(f'.//{ns}action')
+            if action_elements:
+                print(f"    Found {len(action_elements)} actions with namespace: {ns}")
+                break
+        
+        # If no actions found with namespaces, try without namespace
+        if not action_elements:
+            action_elements = root.findall('.//action')
+            print(f"    Found {len(action_elements)} actions without namespace")
+        
+        for i, action_elem in enumerate(action_elements):
+            action_info = self.parse_action(action_elem, i + 1, workflow_file)
+            if action_info:
+                actions.append(action_info)
+                print(f"    Parsed action {i+1}: {action_info['action_name']} ({action_info['technology']})")
+        
+        return actions
+    
+    def parse_action(self, action_elem, order, workflow_file):
+        """Parse individual action element"""
+        try:
+            action_name = action_elem.get('name', f'action_{order}')
             
-            pipeline_name = pipeline_data.get('name', 'Unknown')
-            stages = pipeline_data.get('stages', [])
+            # Determine technology and script path
+            technology = "Unknown"
+            script_path = "N/A"
             
-            execution_order = []
-            for stage in stages:
-                stage_name = stage.get('name', 'Unknown')
-                notebooks = stage.get('notebooks', [])
-                dependencies = stage.get('dependencies', [])
+            # Debug: Print action element structure
+            print(f"    Analyzing action: {action_name}")
+            
+            # Check for Spark actions with multiple namespace patterns
+            spark_patterns = [
+                './/{uri:oozie:spark-action:0.1}spark',
+                './/{uri:oozie:spark-action:0.2}spark',
+                './/{uri:oozie:spark-action:0.3}spark',
+                './/spark'
+            ]
+            
+            spark_elem = None
+            for pattern in spark_patterns:
+                spark_elem = action_elem.find(pattern)
+                if spark_elem is not None:
+                    break
+            
+            if spark_elem is not None:
+                technology = "Spark"
+                # Look for jar or script with multiple patterns
+                jar_patterns = [
+                    '{uri:oozie:spark-action:0.1}jar',
+                    '{uri:oozie:spark-action:0.2}jar',
+                    'jar'
+                ]
                 
-                execution_order.append({
-                    'stage': stage_name,
-                    'notebooks': notebooks,
-                    'dependencies': dependencies
-                })
-            
-            self.execution_flows[pipeline_name] = {
-                'type': 'Databricks Pipeline',
-                'file': str(pipeline_file),
-                'execution_order': execution_order
-            }
-            
-        except Exception as e:
-            print(f"Error analyzing Databricks pipeline {pipeline_file}: {e}")
-    
-    def analyze_databricks_workflow(self, workflow_file):
-        """Analyze Databricks workflow JSON"""
-        try:
-            with open(workflow_file, 'r', encoding='utf-8') as f:
-                workflow_data = json.load(f)
-            
-            workflow_name = workflow_data.get('name', 'Unknown')
-            tasks = workflow_data.get('tasks', [])
-            
-            execution_order = []
-            for task in tasks:
-                task_name = task.get('task_key', 'Unknown')
-                notebook_path = task.get('notebook_task', {}).get('notebook_path', 'Unknown')
-                dependencies = task.get('depends_on', [])
-                
-                execution_order.append({
-                    'task': task_name,
-                    'notebook': notebook_path,
-                    'dependencies': dependencies
-                })
-            
-            self.execution_flows[workflow_name] = {
-                'type': 'Databricks Workflow',
-                'file': str(workflow_file),
-                'execution_order': execution_order
-            }
-            
-        except Exception as e:
-            print(f"Error analyzing Databricks workflow {workflow_file}: {e}")
-    
-    def analyze_pig_script_detailed(self, pig_file):
-        """Analyze Pig script with detailed execution flow and comments"""
-        try:
-            with open(pig_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            
-            # Extract comments and section headers
-            comments = self.extract_pig_comments(content)
-            
-            # Extract execution steps
-            execution_steps = self.extract_pig_execution_steps(content)
-            
-            # Extract data flow
-            data_flow = self.extract_pig_data_flow_detailed(content)
-            
-            # Extract business logic from comments
-            business_logic = self.extract_business_logic_from_comments(comments)
-            
-            # Analyze CM2 matching passes if present
-            cm2_passes = self.extract_cm2_matching_passes(content)
-            
-            process = {
-                'type': 'Pig Script',
-                'name': pig_file.name,
-                'path': str(pig_file),
-                'relative_path': str(pig_file.relative_to(pig_file.parents[2])),
-                'comments': comments,
-                'execution_steps': execution_steps,
-                'data_flow': data_flow,
-                'business_logic': business_logic,
-                'cm2_passes': cm2_passes,
-                'content_snippet': content[:1000] + "..." if len(content) > 1000 else content
-            }
-            
-            return process
-            
-        except Exception as e:
-            print(f"Error analyzing Pig script {pig_file}: {e}")
-            return None
-    
-    def analyze_pyspark_script_detailed(self, py_file):
-        """Analyze PySpark script with detailed execution flow"""
-        try:
-            with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            
-            # Extract comments and docstrings
-            comments = self.extract_python_comments(content)
-            
-            # Extract execution steps
-            execution_steps = self.extract_pyspark_execution_steps(content)
-            
-            # Extract data flow
-            data_flow = self.extract_pyspark_data_flow_detailed(content)
-            
-            # Extract business logic
-            business_logic = self.extract_business_logic_from_comments(comments)
-            
-            # Extract function definitions and their purposes
-            functions = self.extract_python_functions_detailed(content)
-            
-            process = {
-                'type': 'PySpark Script',
-                'name': py_file.name,
-                'path': str(py_file),
-                'relative_path': str(py_file.relative_to(py_file.parents[2])),
-                'comments': comments,
-                'execution_steps': execution_steps,
-                'data_flow': data_flow,
-                'business_logic': business_logic,
-                'functions': functions,
-                'content_snippet': content[:1000] + "..." if len(content) > 1000 else content
-            }
-            
-            return process
-            
-        except Exception as e:
-            print(f"Error analyzing PySpark script {py_file}: {e}")
-            return None
-    
-    def analyze_databricks_notebook_detailed(self, py_file):
-        """Analyze Databricks notebook with detailed execution flow"""
-        try:
-            with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            
-            # Extract comments and docstrings
-            comments = self.extract_python_comments(content)
-            
-            # Extract execution steps
-            execution_steps = self.extract_databricks_execution_steps(content)
-            
-            # Extract data flow
-            data_flow = self.extract_databricks_data_flow_detailed(content)
-            
-            # Extract business logic
-            business_logic = self.extract_business_logic_from_comments(comments)
-            
-            # Extract function definitions
-            functions = self.extract_python_functions_detailed(content)
-            
-            process = {
-                'type': 'Databricks Notebook',
-                'name': py_file.name,
-                'path': str(py_file),
-                'relative_path': str(py_file.relative_to(py_file.parents[2])),
-                'comments': comments,
-                'execution_steps': execution_steps,
-                'data_flow': data_flow,
-                'business_logic': business_logic,
-                'functions': functions,
-                'content_snippet': content[:1000] + "..." if len(content) > 1000 else content
-            }
-            
-            return process
-            
-        except Exception as e:
-            print(f"Error analyzing Databricks notebook {py_file}: {e}")
-            return None
-    
-    def analyze_databricks_sql_detailed(self, sql_file):
-        """Analyze Databricks SQL with detailed execution flow"""
-        try:
-            with open(sql_file, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
-            
-            # Extract comments
-            comments = self.extract_sql_comments(content)
-            
-            # Extract execution steps
-            execution_steps = self.extract_sql_execution_steps(content)
-            
-            # Extract business logic
-            business_logic = self.extract_business_logic_from_comments(comments)
-            
-            process = {
-                'type': 'Databricks SQL',
-                'name': sql_file.name,
-                'path': str(sql_file),
-                'relative_path': str(sql_file.relative_to(sql_file.parents[2])),
-                'comments': comments,
-                'execution_steps': execution_steps,
-                'business_logic': business_logic,
-                'content_snippet': content[:1000] + "..." if len(content) > 1000 else content
-            }
-            
-            return process
-            
-        except Exception as e:
-            print(f"Error analyzing Databricks SQL {sql_file}: {e}")
-            return None
-    
-    def extract_pig_comments(self, content):
-        """Extract comments from Pig script"""
-        comments = []
-        lines = content.split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if line.startswith('--') or line.startswith('/*') or line.startswith('*'):
-                comments.append(line)
-        
-        return comments
-    
-    def extract_python_comments(self, content):
-        """Extract comments and docstrings from Python script"""
-        comments = []
-        lines = content.split('\n')
-        
-        in_docstring = False
-        for line in lines:
-            line_stripped = line.strip()
-            
-            # Check for docstrings
-            if '"""' in line_stripped or "'''" in line_stripped:
-                in_docstring = not in_docstring
-            
-            # Check for regular comments
-            if line_stripped.startswith('#') and not in_docstring:
-                comments.append(line_stripped)
-            
-            # Add docstring content
-            if in_docstring and line_stripped:
-                comments.append(line_stripped)
-        
-        return comments
-    
-    def extract_sql_comments(self, content):
-        """Extract comments from SQL script"""
-        comments = []
-        lines = content.split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if line.startswith('--') or line.startswith('/*'):
-                comments.append(line)
-        
-        return comments
-    
-    def extract_pig_execution_steps(self, content):
-        """Extract execution steps from Pig script"""
-        steps = []
-        lines = content.split('\n')
-        
-        current_step = None
-        for line in lines:
-            line_stripped = line.strip()
-            
-            # Look for section headers
-            if line_stripped.startswith('----'):
-                current_step = line_stripped.replace('-', '').strip()
-                steps.append({'step': current_step, 'operations': []})
-            
-            # Look for Pig operations
-            elif current_step and ('=' in line_stripped and ('LOAD' in line_stripped or 'FOREACH' in line_stripped or 'FILTER' in line_stripped or 'GROUP' in line_stripped or 'JOIN' in line_stripped or 'STORE' in line_stripped)):
-                if steps:
-                    steps[-1]['operations'].append(line_stripped)
-        
-        return steps
-    
-    def extract_pyspark_execution_steps(self, content):
-        """Extract execution steps from PySpark script"""
-        steps = []
-        lines = content.split('\n')
-        
-        current_step = None
-        for line in lines:
-            line_stripped = line.strip()
-            
-            # Look for section headers
-            if line_stripped.startswith('#') and ('STEP' in line_stripped or 'PHASE' in line_stripped or 'PASS' in line_stripped):
-                current_step = line_stripped.replace('#', '').strip()
-                steps.append({'step': current_step, 'operations': []})
-            
-            # Look for Spark operations
-            elif current_step and ('.' in line_stripped and ('load' in line_stripped or 'select' in line_stripped or 'filter' in line_stripped or 'groupBy' in line_stripped or 'join' in line_stripped or 'save' in line_stripped)):
-                if steps:
-                    steps[-1]['operations'].append(line_stripped)
-        
-        return steps
-    
-    def extract_databricks_execution_steps(self, content):
-        """Extract execution steps from Databricks notebook"""
-        return self.extract_pyspark_execution_steps(content)  # Same as PySpark
-    
-    def extract_sql_execution_steps(self, content):
-        """Extract execution steps from SQL script"""
-        steps = []
-        lines = content.split('\n')
-        
-        current_step = None
-        for line in lines:
-            line_stripped = line.strip()
-            
-            # Look for section headers
-            if line_stripped.startswith('--') and ('STEP' in line_stripped or 'PHASE' in line_stripped):
-                current_step = line_stripped.replace('--', '').strip()
-                steps.append({'step': current_step, 'operations': []})
-            
-            # Look for SQL operations
-            elif current_step and (line_stripped.upper().startswith(('SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP'))):
-                if steps:
-                    steps[-1]['operations'].append(line_stripped)
-        
-        return steps
-    
-    def extract_cm2_matching_passes(self, content):
-        """Extract CM2 matching passes from Pig script"""
-        passes = []
-        lines = content.split('\n')
-        
-        for line in lines:
-            line_stripped = line.strip()
-            if 'PASS' in line_stripped and ('FIRST' in line_stripped or 'SECOND' in line_stripped or 'THIRD' in line_stripped or 'FOURTH' in line_stripped or 'FIFTH' in line_stripped or 'SIXTH' in line_stripped):
-                passes.append(line_stripped)
-        
-        return passes
-    
-    def extract_pig_data_flow_detailed(self, content):
-        """Extract detailed data flow from Pig script"""
-        flow = []
-        lines = content.split('\n')
-        
-        for line in lines:
-            line_stripped = line.strip()
-            if '=' in line_stripped and ('LOAD' in line_stripped or 'FOREACH' in line_stripped or 'FILTER' in line_stripped or 'GROUP' in line_stripped or 'JOIN' in line_stripped or 'STORE' in line_stripped):
-                flow.append(line_stripped)
-        
-        return flow
-    
-    def extract_pyspark_data_flow_detailed(self, content):
-        """Extract detailed data flow from PySpark script"""
-        flow = []
-        lines = content.split('\n')
-        
-        for line in lines:
-            line_stripped = line.strip()
-            if '=' in line_stripped and ('.' in line_stripped and ('load' in line_stripped or 'select' in line_stripped or 'filter' in line_stripped or 'groupBy' in line_stripped or 'join' in line_stripped or 'save' in line_stripped)):
-                flow.append(line_stripped)
-        
-        return flow
-    
-    def extract_databricks_data_flow_detailed(self, content):
-        """Extract detailed data flow from Databricks notebook"""
-        return self.extract_pyspark_data_flow_detailed(content)  # Same as PySpark
-    
-    def extract_business_logic_from_comments(self, comments):
-        """Extract business logic from comments"""
-        logic_hints = []
-        
-        for comment in comments:
-            comment_lower = comment.lower()
-            
-            for key, patterns in self.business_logic_patterns.items():
-                for pattern in patterns:
-                    if pattern in comment_lower:
-                        logic_hints.append(f"{key}_processing")
+                jar_elem = None
+                for pattern in jar_patterns:
+                    jar_elem = spark_elem.find(pattern)
+                    if jar_elem is not None:
                         break
-        
-        return list(set(logic_hints))
-    
-    def extract_python_functions_detailed(self, content):
-        """Extract function definitions with their purposes"""
-        functions = []
-        
-        # Extract function definitions
-        pattern = r"def\s+(\w+)\s*\([^)]*\):"
-        matches = re.findall(pattern, content)
-        
-        for func_name in matches:
-            # Try to find docstring or comment for the function
-            func_pattern = rf"def\s+{func_name}\s*\([^)]*\):\s*\n\s*\"\"\"([^\"]*)\"\"\""
-            docstring_match = re.search(func_pattern, content, re.DOTALL)
+                
+                if jar_elem is not None:
+                    script_path = jar_elem.text or "N/A"
+                else:
+                    # Look for script element
+                    script_patterns = [
+                        '{uri:oozie:spark-action:0.1}script',
+                        '{uri:oozie:spark-action:0.2}script',
+                        'script'
+                    ]
+                    
+                    script_elem = None
+                    for pattern in script_patterns:
+                        script_elem = spark_elem.find(pattern)
+                        if script_elem is not None:
+                            break
+                    
+                    if script_elem is not None:
+                        script_path = script_elem.text or "N/A"
             
-            if docstring_match:
-                docstring = docstring_match.group(1).strip()
-                functions.append({'name': func_name, 'purpose': docstring})
-            else:
-                functions.append({'name': func_name, 'purpose': 'No documentation found'})
-        
-        return functions
-    
-    def build_hadoop_execution_flow(self):
-        """Build Hadoop execution flow from analyzed processes"""
-        # Group processes by workflow
-        workflow_groups = defaultdict(list)
-        
-        for process in self.hadoop_processes:
-            # Extract workflow name from path
-            path_parts = process['path'].split('/')
-            if 'app-' in '/'.join(path_parts):
-                workflow_name = [part for part in path_parts if part.startswith('app-')][0]
-                workflow_groups[workflow_name].append(process)
-        
-        # Build execution order
-        for workflow_name, processes in workflow_groups.items():
-            # Sort by file name to get execution order
-            processes.sort(key=lambda x: x['name'])
+            # Check for Pig actions
+            pig_elem = action_elem.find('.//pig')
+            if pig_elem is not None:
+                technology = "Pig"
+                script_elem = pig_elem.find('script')
+                if script_elem is not None:
+                    script_path = script_elem.text or "N/A"
             
-            self.execution_flows[f"Hadoop_{workflow_name}"] = {
-                'type': 'Hadoop Workflow',
-                'processes': processes,
-                'execution_order': [p['name'] for p in processes]
+            # Check for Hive actions with multiple namespace patterns
+            hive_patterns = [
+                './/{uri:oozie:hive-action:0.2}hive',
+                './/{uri:oozie:hive-action:0.1}hive',
+                './/hive'
+            ]
+            
+            hive_elem = None
+            for pattern in hive_patterns:
+                hive_elem = action_elem.find(pattern)
+                if hive_elem is not None:
+                    break
+            
+            if hive_elem is not None:
+                technology = "Hive"
+                script_patterns = [
+                    '{uri:oozie:hive-action:0.2}script',
+                    '{uri:oozie:hive-action:0.1}script',
+                    'script'
+                ]
+                
+                script_elem = None
+                for pattern in script_patterns:
+                    script_elem = hive_elem.find(pattern)
+                    if script_elem is not None:
+                        break
+                
+                if script_elem is not None:
+                    script_path = script_elem.text or "N/A"
+            
+            # Check for Shell actions with multiple namespace patterns
+            shell_patterns = [
+                './/{uri:oozie:shell-action:0.1}shell',
+                './/{uri:oozie:shell-action:0.2}shell',
+                './/{uri:oozie:shell-action:0.3}shell',
+                './/shell'
+            ]
+            
+            shell_elem = None
+            for pattern in shell_patterns:
+                shell_elem = action_elem.find(pattern)
+                if shell_elem is not None:
+                    break
+            
+            if shell_elem is not None:
+                technology = "Shell"
+                exec_patterns = [
+                    '{uri:oozie:shell-action:0.1}exec',
+                    '{uri:oozie:shell-action:0.2}exec',
+                    'exec'
+                ]
+                
+                exec_elem = None
+                for pattern in exec_patterns:
+                    exec_elem = shell_elem.find(pattern)
+                    if exec_elem is not None:
+                        break
+                
+                if exec_elem is not None:
+                    script_path = exec_elem.text or "N/A"
+            
+            # Check for Java actions with multiple namespace patterns
+            java_patterns = [
+                './/{uri:oozie:java-action:0.1}java',
+                './/{uri:oozie:java-action:0.2}java',
+                './/java'
+            ]
+            
+            java_elem = None
+            for pattern in java_patterns:
+                java_elem = action_elem.find(pattern)
+                if java_elem is not None:
+                    break
+            
+            if java_elem is not None:
+                technology = "Java"
+                main_class_patterns = [
+                    '{uri:oozie:java-action:0.1}main-class',
+                    '{uri:oozie:java-action:0.2}main-class',
+                    'main-class'
+                ]
+                
+                main_class = None
+                for pattern in main_class_patterns:
+                    main_class = java_elem.find(pattern)
+                    if main_class is not None:
+                        break
+                
+                if main_class is not None:
+                    script_path = main_class.text or "N/A"
+            
+            print(f"    Detected: {technology} - {script_path}")
+            
+            return {
+                'action_name': action_name,
+                'technology': technology,
+                'script_path': script_path,
+                'processing_order': order
             }
-    
-    def build_databricks_execution_flow(self):
-        """Build Databricks execution flow from analyzed processes"""
-        # Group processes by folder
-        folder_groups = defaultdict(list)
-        
-        for process in self.databricks_processes:
-            # Extract folder name from path
-            path_parts = process['path'].split('/')
-            if len(path_parts) > 1:
-                folder_name = path_parts[-2]  # Parent folder
-                folder_groups[folder_name].append(process)
-        
-        # Build execution order
-        for folder_name, processes in folder_groups.items():
-            # Sort by file name to get execution order
-            processes.sort(key=lambda x: x['name'])
             
-            self.execution_flows[f"Databricks_{folder_name}"] = {
-                'type': 'Databricks Workflow',
-                'processes': processes,
-                'execution_order': [p['name'] for p in processes]
-            }
+        except Exception as e:
+            print(f"    ⚠️ Error parsing action: {e}")
+            return None
     
-    def create_detailed_flow_excel(self, output_file="DETAILED_EXECUTION_FLOW.xlsx"):
-        """Create detailed Excel file with execution flows"""
+    def determine_processing_order(self, actions):
+        """Determine the processing order of actions"""
+        if not actions:
+            return []
+        
+        # Actions are already in order based on XML parsing
+        return [f"{i+1}. {action['action_name']} ({action['technology']})" 
+                for i, action in enumerate(actions)]
+    
+    def create_consolidated_excel(self, output_file):
+        """Create consolidated Excel report"""
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
         
-        # Create Execution Flow Overview sheet
-        self.create_execution_flow_overview_sheet(wb)
-        
-        # Create Hadoop Detailed Flow sheet
-        self.create_hadoop_detailed_flow_sheet(wb)
-        
-        # Create Databricks Detailed Flow sheet
-        self.create_databricks_detailed_flow_sheet(wb)
-        
-        # Create Process Comparison sheet
-        self.create_process_comparison_sheet(wb)
+        # Create sheets
+        self.create_pipeline_overview_sheet(wb)
+        self.create_action_details_sheet(wb)
+        self.create_technology_summary_sheet(wb)
+        self.create_repository_summary_sheet(wb)
         
         wb.save(output_file)
-        print(f"Detailed execution flow Excel file created: {output_file}")
+        print(f"\n📊 Consolidated Excel report created: {output_file}")
     
-    def create_execution_flow_overview_sheet(self, wb):
-        """Create Execution Flow Overview sheet"""
-        ws = wb.create_sheet("Execution_Flow_Overview")
+    def create_pipeline_overview_sheet(self, wb):
+        """Create Pipeline Overview sheet"""
+        ws = wb.create_sheet("Pipeline_Overview")
+        
+        # Add title
+        ws['A1'] = "Hadoop Pipeline Overview - All Repositories"
+        ws['A1'].font = Font(size=16, bold=True)
         
         headers = [
-            "Environment", "Workflow/Process", "Type", "Execution Order", "Key Processes", "Purpose"
+            "Repository", "Pipeline Name", "Pipeline Type", "File Path", 
+            "Total Actions", "Technologies", "Processing Order"
         ]
         ws.append(headers)
         
-        for flow_name, flow_data in self.execution_flows.items():
-            if 'Hadoop' in flow_name:
-                env = "Hadoop"
-                processes = flow_data.get('processes', [])
-                key_processes = [p['name'] for p in processes[:5]]  # First 5 processes
-                purpose = self.infer_workflow_purpose(processes)
-            else:
-                env = "Databricks"
-                processes = flow_data.get('processes', [])
-                key_processes = [p['name'] for p in processes[:5]]  # First 5 processes
-                purpose = self.infer_workflow_purpose(processes)
-            
+        for pipeline in self.all_pipelines:
             row = [
-                env,
-                flow_name,
-                flow_data.get('type', 'Unknown'),
-                ' → '.join(flow_data.get('execution_order', [])),
-                ', '.join(key_processes),
-                purpose
+                pipeline['repo_name'],
+                pipeline['pipeline_name'],
+                pipeline['pipeline_type'],
+                pipeline['file_path'],
+                pipeline['total_actions'],
+                ', '.join(pipeline['technologies']),
+                ' | '.join(pipeline['processing_order'])
             ]
             ws.append(row)
         
         self.format_sheet(ws)
     
-    def create_hadoop_detailed_flow_sheet(self, wb):
-        """Create Hadoop Detailed Flow sheet"""
-        ws = wb.create_sheet("Hadoop_Detailed_Flow")
+    def create_action_details_sheet(self, wb):
+        """Create Action Details sheet"""
+        ws = wb.create_sheet("Action_Details")
+        
+        # Add title
+        ws['A1'] = "Pipeline Action Details"
+        ws['A1'].font = Font(size=16, bold=True)
         
         headers = [
-            "Process Name", "Type", "Path", "Execution Steps", "CM2 Passes", "Business Logic", "Comments Summary"
+            "Repository", "Pipeline Name", "Action Name", "Technology", 
+            "Script Path", "Processing Order"
         ]
         ws.append(headers)
         
-        for process in self.hadoop_processes:
-            execution_steps = []
-            for step in process.get('execution_steps', []):
-                execution_steps.append(f"{step.get('step', 'Unknown')}: {len(step.get('operations', []))} operations")
-            
-            cm2_passes = process.get('cm2_passes', [])
-            comments_summary = self.summarize_comments(process.get('comments', []))
-            
-            row = [
-                process['name'],
-                process['type'],
-                process['relative_path'],
-                '; '.join(execution_steps),
-                '; '.join(cm2_passes),
-                ', '.join(process['business_logic']),
-                comments_summary
-            ]
-            ws.append(row)
-        
-        self.format_sheet(ws)
-    
-    def create_databricks_detailed_flow_sheet(self, wb):
-        """Create Databricks Detailed Flow sheet"""
-        ws = wb.create_sheet("Databricks_Detailed_Flow")
-        
-        headers = [
-            "Process Name", "Type", "Path", "Execution Steps", "Functions", "Business Logic", "Comments Summary"
-        ]
-        ws.append(headers)
-        
-        for process in self.databricks_processes:
-            execution_steps = []
-            for step in process.get('execution_steps', []):
-                execution_steps.append(f"{step.get('step', 'Unknown')}: {len(step.get('operations', []))} operations")
-            
-            functions = [f['name'] for f in process.get('functions', [])]
-            comments_summary = self.summarize_comments(process.get('comments', []))
-            
-            row = [
-                process['name'],
-                process['type'],
-                process['relative_path'],
-                '; '.join(execution_steps),
-                ', '.join(functions),
-                ', '.join(process['business_logic']),
-                comments_summary
-            ]
-            ws.append(row)
-        
-        self.format_sheet(ws)
-    
-    def create_process_comparison_sheet(self, wb):
-        """Create Process Comparison sheet"""
-        ws = wb.create_sheet("Process_Comparison")
-        
-        headers = [
-            "Hadoop Process", "Hadoop Purpose", "Databricks Process", "Databricks Purpose", "Similarity", "Key Differences"
-        ]
-        ws.append(headers)
-        
-        # Create mappings between Hadoop and Databricks processes
-        for hadoop_process in self.hadoop_processes:
-            best_match = self.find_best_databricks_match(hadoop_process)
-            
-            if best_match:
+        for pipeline in self.all_pipelines:
+            for action in pipeline['actions']:
                 row = [
-                    hadoop_process['name'],
-                    self.infer_process_purpose(hadoop_process),
-                    best_match['name'],
-                    self.infer_process_purpose(best_match),
-                    f"{best_match['similarity']:.2f}",
-                    '; '.join(best_match['differences'])
+                    pipeline['repo_name'],
+                    pipeline['pipeline_name'],
+                    action['action_name'],
+                    action['technology'],
+                    action['script_path'],
+                    action['processing_order']
                 ]
                 ws.append(row)
         
         self.format_sheet(ws)
     
-    def infer_workflow_purpose(self, processes):
-        """Infer workflow purpose from processes"""
-        purposes = []
-        for process in processes:
-            purposes.extend(process.get('business_logic', []))
+    def create_technology_summary_sheet(self, wb):
+        """Create Technology Summary sheet"""
+        ws = wb.create_sheet("Technology_Summary")
         
-        # Count most common purposes
-        purpose_counts = {}
-        for purpose in purposes:
-            purpose_counts[purpose] = purpose_counts.get(purpose, 0) + 1
+        # Add title
+        ws['A1'] = "Technology Usage Summary"
+        ws['A1'].font = Font(size=16, bold=True)
         
-        # Return top 3 purposes
-        sorted_purposes = sorted(purpose_counts.items(), key=lambda x: x[1], reverse=True)
-        return ', '.join([p[0] for p in sorted_purposes[:3]])
+        headers = ["Technology", "Total Count", "Percentage"]
+        ws.append(headers)
+        
+        total_technologies = sum(self.technology_counts.values())
+        
+        for tech, count in self.technology_counts.most_common():
+            percentage = (count / total_technologies * 100) if total_technologies > 0 else 0
+            row = [tech, count, f"{percentage:.1f}%"]
+            ws.append(row)
+        
+        # Add summary row
+        ws.append([])
+        ws.append(["TOTAL", total_technologies, "100.0%"])
+        
+        self.format_sheet(ws)
     
-    def infer_process_purpose(self, process):
-        """Infer process purpose from business logic and comments"""
-        purposes = process.get('business_logic', [])
-        comments = process.get('comments', [])
+    def create_repository_summary_sheet(self, wb):
+        """Create Repository Summary sheet"""
+        ws = wb.create_sheet("Repository_Summary")
         
-        # Look for purpose indicators in comments
-        for comment in comments:
-            comment_lower = comment.lower()
-            if 'purpose' in comment_lower or 'function' in comment_lower or 'does' in comment_lower:
-                return comment[:100] + "..." if len(comment) > 100 else comment
+        # Add title
+        ws['A1'] = "Repository Summary"
+        ws['A1'].font = Font(size=16, bold=True)
         
-        return ', '.join(purposes) if purposes else 'Unknown'
-    
-    def summarize_comments(self, comments):
-        """Summarize comments"""
-        if not comments:
-            return "No comments"
+        headers = [
+            "Repository", "Total Pipelines", "Workflows", "Coordinators", 
+            "Total Actions", "Technologies Used"
+        ]
+        ws.append(headers)
         
-        # Take first few meaningful comments
-        meaningful_comments = []
-        for comment in comments[:3]:
-            if len(comment.strip()) > 10:  # Skip very short comments
-                meaningful_comments.append(comment[:50] + "..." if len(comment) > 50 else comment)
+        for repo_name, stats in self.repo_summary.items():
+            # Count technologies for this repo
+            repo_technologies = []
+            for pipeline in self.all_pipelines:
+                if pipeline['repo_name'] == repo_name:
+                    repo_technologies.extend(pipeline['technologies'])
+            
+            tech_counts = Counter(repo_technologies)
+            tech_summary = ', '.join([f"{tech}({count})" for tech, count in tech_counts.items()])
+            
+            row = [
+                repo_name,
+                stats['total_pipelines'],
+                stats['workflows'],
+                stats['coordinators'],
+                sum(len(p['actions']) for p in self.all_pipelines if p['repo_name'] == repo_name),
+                tech_summary
+            ]
+            ws.append(row)
         
-        return '; '.join(meaningful_comments) if meaningful_comments else "No meaningful comments"
-    
-    def find_best_databricks_match(self, hadoop_process):
-        """Find best Databricks match for Hadoop process"""
-        best_match = None
-        best_score = 0
+        # Add totals row
+        total_pipelines = sum(stats['total_pipelines'] for stats in self.repo_summary.values())
+        total_workflows = sum(stats['workflows'] for stats in self.repo_summary.values())
+        total_coordinators = sum(stats['coordinators'] for stats in self.repo_summary.values())
+        total_actions = sum(len(p['actions']) for p in self.all_pipelines)
         
-        for databricks_process in self.databricks_processes:
-            score = self.calculate_process_similarity(hadoop_process, databricks_process)
-            if score > best_score:
-                best_score = score
-                best_match = {
-                    'name': databricks_process['name'],
-                    'similarity': score,
-                    'differences': self.get_process_differences(hadoop_process, databricks_process)
-                }
+        ws.append([])
+        ws.append([
+            "TOTAL",
+            total_pipelines,
+            total_workflows,
+            total_coordinators,
+            total_actions,
+            f"{len(self.technology_counts)} different technologies"
+        ])
         
-        return best_match if best_score > 0.3 else None
-    
-    def calculate_process_similarity(self, hadoop_process, databricks_process):
-        """Calculate similarity between processes"""
-        score = 0.0
-        
-        # Filename similarity
-        hadoop_name = hadoop_process['name'].lower()
-        databricks_name = databricks_process['name'].lower()
-        
-        common_keywords = ['permid', 'policy', 'address', 'consumer', 'phone', 'merge', 'publish', 'validate', 'parse', 'cm2', 'bdf']
-        for keyword in common_keywords:
-            if keyword in hadoop_name and keyword in databricks_name:
-                score += 0.2
-        
-        # Business logic similarity
-        hadoop_logic = set(hadoop_process['business_logic'])
-        databricks_logic = set(databricks_process['business_logic'])
-        logic_intersection = hadoop_logic.intersection(databricks_logic)
-        if hadoop_logic or databricks_logic:
-            score += len(logic_intersection) / max(len(hadoop_logic), len(databricks_logic)) * 0.4
-        
-        # Comments similarity
-        hadoop_comments = ' '.join(hadoop_process.get('comments', [])).lower()
-        databricks_comments = ' '.join(databricks_process.get('comments', [])).lower()
-        
-        common_terms = ['permid', 'policy', 'address', 'consumer', 'phone', 'merge', 'publish', 'validate', 'parse']
-        for term in common_terms:
-            if term in hadoop_comments and term in databricks_comments:
-                score += 0.05
-        
-        return min(score, 1.0)
-    
-    def get_process_differences(self, hadoop_process, databricks_process):
-        """Get differences between processes"""
-        differences = []
-        
-        # Type difference
-        if hadoop_process['type'] != databricks_process['type']:
-            differences.append(f"Type: {hadoop_process['type']} vs {databricks_process['type']}")
-        
-        # Business logic differences
-        hadoop_logic = set(hadoop_process['business_logic'])
-        databricks_logic = set(databricks_process['business_logic'])
-        
-        hadoop_only = hadoop_logic - databricks_logic
-        databricks_only = databricks_logic - hadoop_logic
-        
-        if hadoop_only:
-            differences.append(f"Hadoop only: {', '.join(hadoop_only)}")
-        if databricks_only:
-            differences.append(f"Databricks only: {', '.join(databricks_only)}")
-        
-        return differences
+        self.format_sheet(ws)
     
     def format_sheet(self, ws):
-        """Format Excel sheet with headers and styling"""
-        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-        header_font = Font(color="FFFFFF", bold=True)
-        header_alignment = Alignment(horizontal="center", vertical="center")
-        
-        # Format header row
-        for cell in ws[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = header_alignment
-        
-        # Auto-adjust column widths
-        for column in ws.columns:
-            max_length = 0
-            column_letter = column[0].column_letter
-            for cell in column:
+        """Format Excel sheet with basic styling"""
+        try:
+            # Set column widths
+            for col_idx in range(1, ws.max_column + 1):
                 try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(str(cell.value))
+                    column_letter = ws.cell(row=1, column=col_idx).column_letter
+                    ws.column_dimensions[column_letter].width = 20
                 except:
                     pass
-            adjusted_width = min(max_length + 2, 50)
-            ws.column_dimensions[column_letter].width = adjusted_width
-        
-        # Add borders
-        thin_border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
-        
-        for row in ws.iter_rows():
-            for cell in row:
-                cell.border = thin_border
+        except Exception as e:
+            print(f"    ⚠️ Warning: Could not format sheet: {e}")
 
 def main():
-    """Main function to run the enhanced flow analyzer"""
-    analyzer = EnhancedFlowAnalyzer()
+    """Main function to run the Hadoop Pipeline Consolidator"""
+    import sys
     
-    print("=== Enhanced Execution Flow Analyzer ===")
-    print("This tool analyzes execution flow, dependencies, and detailed logic in both Hadoop and Databricks.")
+    print("=" * 80)
+    print("🚀 HADOOP PIPELINE CONSOLIDATOR")
+    print("=" * 80)
+    print("Analyzes all Hadoop repositories and creates a consolidated pipeline report")
     print()
     
-    # Check for command line arguments
-    if len(sys.argv) >= 3:
-        hadoop_path = sys.argv[1]
-        databricks_path = sys.argv[2]
-        output_file = sys.argv[3] if len(sys.argv) > 3 else "DETAILED_EXECUTION_FLOW.xlsx"
+    # Get base path from command line arguments or prompt
+    if len(sys.argv) > 1:
+        base_path = sys.argv[1]
     else:
-        print("Usage: python enhanced_flow_analyzer.py <hadoop_path> <databricks_path> [output_file]")
-        print("Example: python enhanced_flow_analyzer.py /path/to/app-cdd /path/to/CDD DETAILED_FLOW.xlsx")
+        base_path = input("Enter the path containing all Hadoop repositories: ").strip()
+    
+    if not base_path:
+        print("Error: Repository path is required!")
+        print("Usage: python hadoop_pipeline_consolidator.py <path_to_repositories>")
+        print("Example: python hadoop_pipeline_consolidator.py OneDrive_1_7-25-2025/Hadoop")
         return
     
-    if not os.path.exists(hadoop_path):
-        print(f"Error: Hadoop repository path does not exist: {hadoop_path}")
+    if not os.path.exists(base_path):
+        print(f"Error: Repository path does not exist: {base_path}")
         return
     
-    if not os.path.exists(databricks_path):
-        print(f"Error: Databricks repository path does not exist: {databricks_path}")
+    # Initialize consolidator
+    consolidator = HadoopPipelineConsolidator()
+    
+    # Find all Hadoop repositories
+    print(f"\n🔍 Scanning for Hadoop repositories in: {base_path}")
+    hadoop_repos = consolidator.find_all_hadoop_repos(base_path)
+    
+    if not hadoop_repos:
+        print("❌ No Hadoop repositories found!")
         return
     
-    # Analyze repositories
-    analyzer.analyze_hadoop_execution_flow(hadoop_path)
-    analyzer.analyze_databricks_execution_flow(databricks_path)
+    print(f"✅ Found {len(hadoop_repos)} Hadoop repositories:")
+    for repo in hadoop_repos:
+        print(f"  - {repo.name}")
     
-    # Create detailed Excel output
-    analyzer.create_detailed_flow_excel(output_file)
+    # Analyze each repository
+    print(f"\n📊 Analyzing all repositories...")
+    total_stats = {
+        'repositories': len(hadoop_repos),
+        'pipelines': 0,
+        'actions': 0,
+        'technologies': 0
+    }
     
-    print(f"\nAnalysis complete!")
-    print(f"Found {len(analyzer.hadoop_processes)} Hadoop processes")
-    print(f"Found {len(analyzer.databricks_processes)} Databricks processes")
-    print(f"Analyzed {len(analyzer.execution_flows)} execution flows")
-    print(f"Results saved to: {output_file}")
+    for repo in hadoop_repos:
+        stats = consolidator.analyze_single_repository(repo)
+        total_stats['pipelines'] += stats['total_pipelines']
+    
+    total_stats['actions'] = sum(len(p['actions']) for p in consolidator.all_pipelines)
+    total_stats['technologies'] = len(consolidator.technology_counts)
+    
+    # Generate consolidated Excel report
+    output_file = "HADOOP_PIPELINE_CONSOLIDATED_REPORT.xlsx"
+    consolidator.create_consolidated_excel(output_file)
+    
+    # Print summary
+    print(f"\n{'='*80}")
+    print("🎯 ANALYSIS SUMMARY")
+    print(f"{'='*80}")
+    print(f"📁 Repositories Analyzed: {total_stats['repositories']}")
+    print(f"🔄 Total Pipelines: {total_stats['pipelines']}")
+    print(f"⚙️ Total Actions: {total_stats['actions']}")
+    print(f"🛠️ Technologies Found: {total_stats['technologies']}")
+    
+    print(f"\n📊 Technology Breakdown:")
+    for tech, count in consolidator.technology_counts.most_common():
+        print(f"  {tech}: {count}")
+    
+    print(f"\n📄 Repository Breakdown:")
+    for repo_name, count in consolidator.pipeline_counts.items():
+        print(f"  {repo_name}: {count} pipelines")
+    
+    print(f"\n🎉 Analysis complete! Check the Excel file: {output_file}")
 
 if __name__ == "__main__":
     main()
