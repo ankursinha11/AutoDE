@@ -811,6 +811,18 @@ class HadoopPipelineConsolidator:
     def read_adf_pipelines_from_excel(self, excel_file):
         """Read ADF pipeline list from Excel file"""
         try:
+            # Check if file exists
+            import os
+            if not os.path.exists(excel_file):
+                print(f"❌ Excel file not found: {excel_file}")
+                return []
+            
+            # Check file extension
+            if not excel_file.lower().endswith(('.xlsx', '.xlsm', '.xltx', '.xltm')):
+                print(f"❌ Invalid file format: {excel_file}")
+                print("   Supported formats: .xlsx, .xlsm, .xltx, .xltm")
+                return []
+            
             wb = openpyxl.load_workbook(excel_file)
             ws = wb.active
             
@@ -832,6 +844,9 @@ class HadoopPipelineConsolidator:
             
         except Exception as e:
             print(f"❌ Error reading ADF Excel file: {e}")
+            print(f"   File: {excel_file}")
+            print("   Please ensure the file is a valid Excel file (.xlsx format)")
+            print("   and can be opened in Excel")
             return []
     
     def create_dynamic_adf_mapping(self, wb, adf_pipelines):
