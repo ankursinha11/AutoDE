@@ -89,33 +89,34 @@ class HadoopPipelineConsolidator:
         """Find all Oozie workflow files"""
         workflows = []
         
-        # Look for workflow.xml files in various locations - comprehensive coverage
+        # Look for ALL workflow files - comprehensive coverage including individual workflows
         patterns = [
-            "**/workflow.xml",                    # Any workflow.xml anywhere
-            "**/oozie/**/workflow.xml",           # CDD-style nested oozie folders
-            "**/workflows/**/workflow.xml",       # Standard workflows folder
-            "**/workflows/**/oozie/workflow.xml", # Nested oozie in workflows
-            "**/coordinators/**/workflow.xml",    # Workflows in coordinators folder
-            "**/jobs/**/workflow.xml",            # Workflows in jobs folder
-            "**/pipelines/**/workflow.xml",       # Workflows in pipelines folder
-            "**/processes/**/workflow.xml",       # Workflows in processes folder
-            "**/etl/**/workflow.xml",             # Workflows in etl folder
-            "**/data/**/workflow.xml",            # Workflows in data folder
-            "**/ingestion/**/workflow.xml",       # Workflows in ingestion folder
-            "**/processing/**/workflow.xml",      # Workflows in processing folder
-            "**/batch/**/workflow.xml",          # Workflows in batch folder
-            "**/streaming/**/workflow.xml",      # Workflows in streaming folder
-            "**/realtime/**/workflow.xml",       # Workflows in realtime folder
-            "**/scheduled/**/workflow.xml",      # Workflows in scheduled folder
-            "**/automated/**/workflow.xml",      # Workflows in automated folder
-            "**/manual/**/workflow.xml",         # Workflows in manual folder
-            "**/adhoc/**/workflow.xml",          # Workflows in adhoc folder
-            "**/temp/**/workflow.xml",           # Workflows in temp folder
-            "**/test/**/workflow.xml",           # Workflows in test folder
-            "**/dev/**/workflow.xml",            # Workflows in dev folder
-            "**/prod/**/workflow.xml",           # Workflows in prod folder
-            "**/staging/**/workflow.xml",        # Workflows in staging folder
-            "**/qa/**/workflow.xml"              # Workflows in qa folder
+            "**/*workflow.xml",                  # ALL workflow files (including individual ones)
+            "**/workflow.xml",                   # Main workflow.xml files
+            "**/oozie/**/*workflow.xml",         # CDD-style nested oozie folders
+            "**/workflows/**/*workflow.xml",     # Standard workflows folder
+            "**/workflows/**/oozie/*workflow.xml", # Nested oozie in workflows
+            "**/coordinators/**/*workflow.xml",  # Workflows in coordinators folder
+            "**/jobs/**/*workflow.xml",          # Workflows in jobs folder
+            "**/pipelines/**/*workflow.xml",     # Workflows in pipelines folder
+            "**/processes/**/*workflow.xml",     # Workflows in processes folder
+            "**/etl/**/*workflow.xml",           # Workflows in etl folder
+            "**/data/**/*workflow.xml",          # Workflows in data folder
+            "**/ingestion/**/*workflow.xml",     # Workflows in ingestion folder
+            "**/processing/**/*workflow.xml",    # Workflows in processing folder
+            "**/batch/**/*workflow.xml",         # Workflows in batch folder
+            "**/streaming/**/*workflow.xml",     # Workflows in streaming folder
+            "**/realtime/**/*workflow.xml",      # Workflows in realtime folder
+            "**/scheduled/**/*workflow.xml",     # Workflows in scheduled folder
+            "**/automated/**/*workflow.xml",     # Workflows in automated folder
+            "**/manual/**/*workflow.xml",        # Workflows in manual folder
+            "**/adhoc/**/*workflow.xml",         # Workflows in adhoc folder
+            "**/temp/**/*workflow.xml",          # Workflows in temp folder
+            "**/test/**/*workflow.xml",          # Workflows in test folder
+            "**/dev/**/*workflow.xml",           # Workflows in dev folder
+            "**/prod/**/*workflow.xml",          # Workflows in prod folder
+            "**/staging/**/*workflow.xml",      # Workflows in staging folder
+            "**/qa/**/*workflow.xml"             # Workflows in qa folder
         ]
         
         for pattern in patterns:
@@ -488,6 +489,7 @@ class HadoopPipelineConsolidator:
         self.create_action_details_sheet(wb)
         self.create_technology_summary_sheet(wb)
         self.create_repository_summary_sheet(wb)
+        self.create_pipeline_mapping_sheet(wb)
         
         wb.save(output_file)
         print(f"\n📊 Consolidated Excel report created: {output_file}")
@@ -623,6 +625,150 @@ class HadoopPipelineConsolidator:
         ])
         
         self.format_sheet(ws)
+    
+    def create_pipeline_mapping_sheet(self, wb):
+        """Create Pipeline Mapping sheet - Azure Databricks to Hadoop workflows"""
+        ws = wb.create_sheet("Pipeline_Mapping")
+        
+        # Add title
+        ws['A1'] = "Azure Databricks to Hadoop Pipeline Mapping"
+        ws['A1'].font = Font(size=16, bold=True)
+        
+        headers = [
+            "S.No", "Project", "Azure Databricks Pipeline", "Hadoop Repository", 
+            "Mapped Hadoop Workflow", "Mapping Status", "Confidence Level", "Notes"
+        ]
+        ws.append(headers)
+        
+        # Define the mapping from your table
+        azure_pipelines = [
+            # DATA INGESTION
+            {"sno": 1, "project": "DATA INGESTION", "pipeline": "pl_dataingestion_abi_group1", "repo": "app-data-ingestion"},
+            {"sno": 2, "project": "", "pipeline": "pl_dataingestion_abi_group2", "repo": "app-data-ingestion"},
+            {"sno": 3, "project": "", "pipeline": "pl_dataingestion_big_tables", "repo": "app-data-ingestion"},
+            {"sno": 4, "project": "", "pipeline": "pl_dataingestion_fnf", "repo": "app-data-ingestion"},
+            
+            # CDD
+            {"sno": 5, "project": "CDD", "pipeline": "pl_cdd_es_prebdf", "repo": "app-cdd"},
+            {"sno": 6, "project": "", "pipeline": "pl_cdd_bdf_download", "repo": "app-cdd"},
+            {"sno": 7, "project": "", "pipeline": "pl_cdd_es_postbdf", "repo": "app-cdd"},
+            {"sno": 8, "project": "", "pipeline": "pl_cdd_ie_prebdf", "repo": "app-cdd"},
+            {"sno": 9, "project": "", "pipeline": "pl_cdd_ie_postbdf", "repo": "app-cdd"},
+            {"sno": 10, "project": "", "pipeline": "pl_cdd_tu_prebdf", "repo": "app-cdd"},
+            
+            # GMRN
+            {"sno": 11, "project": "GMRN", "pipeline": "pl_gmrn_ghic", "repo": "app-globalmrn"},
+            {"sno": 12, "project": "", "pipeline": "pl_gmrn_merge", "repo": "app-globalmrn"},
+            
+            # LEAD REPOSITORY
+            {"sno": 13, "project": "LEAD REPOSITORY", "pipeline": "pl_leadrepo_escan_ich_import", "repo": "app-lead-repository"},
+            {"sno": 14, "project": "", "pipeline": "pl_leadrepo_escan_import_fc", "repo": "app-lead-repository"},
+            {"sno": 15, "project": "", "pipeline": "pl_leadrepository_xref", "repo": "app-lead-repository"},
+            
+            # LSB
+            {"sno": 16, "project": "LSB", "pipeline": "pl_leadservicebase", "repo": "app-lead-service"},
+            
+            # LEAD DISCOVERY
+            {"sno": 17, "project": "LEAD DISCOVERY", "pipeline": "pl_leaddiscovery_globalmrn_assign", "repo": "app-lead-discovery"},
+            {"sno": 18, "project": "", "pipeline": "pl_leaddiscovery_medicareleads", "repo": "app-lead-discovery"},
+            {"sno": 19, "project": "", "pipeline": "pl_leaddiscovery_medicaidleads", "repo": "app-lead-discovery"},
+            {"sno": 20, "project": "", "pipeline": "pl_leaddiscovery_lead_propagation", "repo": "app-lead-discovery"},
+            {"sno": 21, "project": "", "pipeline": "pl_leaddiscovery_known_commercial", "repo": "app-lead-discovery"},
+            {"sno": 22, "project": "", "pipeline": "pl_leaddiscovery_leadlookup_knowncommercial", "repo": "app-lead-discovery"},
+            {"sno": 23, "project": "", "pipeline": "pl_leaddiscovery_leadverify", "repo": "app-lead-discovery"},
+            {"sno": 24, "project": "", "pipeline": "pl_leaddiscovery_subdob", "repo": "app-lead-discovery"},
+            
+            # OPS HINTS
+            {"sno": 25, "project": "OPS HINTS", "pipeline": "pl_ops_hints", "repo": "app-ops-hints"},
+            
+            # HELPERS
+            {"sno": 26, "project": "Helpers", "pipeline": "pl_mbihelper", "repo": "app-coverage-helpers"}
+        ]
+        
+        # Create mapping for each Azure pipeline
+        for azure_pipeline in azure_pipelines:
+            mapped_workflow = self.find_matching_hadoop_workflow(azure_pipeline["pipeline"], azure_pipeline["repo"])
+            
+            row = [
+                azure_pipeline["sno"],
+                azure_pipeline["project"],
+                azure_pipeline["pipeline"],
+                azure_pipeline["repo"],
+                mapped_workflow["workflow_name"],
+                mapped_workflow["status"],
+                mapped_workflow["confidence"],
+                mapped_workflow["notes"]
+            ]
+            ws.append(row)
+        
+        self.format_sheet(ws)
+    
+    def find_matching_hadoop_workflow(self, azure_pipeline_name, repo_name):
+        """Find matching Hadoop workflow for Azure pipeline"""
+        # Direct matches we know exist
+        direct_matches = {
+            "pl_dataingestion_big_tables": {
+                "workflow_name": "big_tables_workflow.xml",
+                "status": "✅ FOUND",
+                "confidence": "High",
+                "notes": "Direct match found in ingest_all folder"
+            },
+            "pl_dataingestion_fnf": {
+                "workflow_name": "sqoop_fnf_workflow.xml", 
+                "status": "✅ FOUND",
+                "confidence": "High",
+                "notes": "Direct match found in ingest_all folder"
+            }
+        }
+        
+        # Check if we have this repository analyzed
+        if repo_name not in self.repo_summary:
+            return {
+                "workflow_name": "N/A",
+                "status": "❌ REPO NOT ANALYZED",
+                "confidence": "N/A",
+                "notes": f"Repository {repo_name} not found in current analysis"
+            }
+        
+        # Check for direct match
+        if azure_pipeline_name in direct_matches:
+            return direct_matches[azure_pipeline_name]
+        
+        # Look for similar workflows in the analyzed pipelines
+        found_workflows = [p for p in self.all_pipelines if p['repo_name'] == repo_name]
+        
+        if not found_workflows:
+            return {
+                "workflow_name": "N/A",
+                "status": "❌ NO WORKFLOWS FOUND",
+                "confidence": "N/A", 
+                "notes": f"No workflows found in {repo_name}"
+            }
+        
+        # Try to find similar workflow names
+        pipeline_keywords = azure_pipeline_name.lower().replace("pl_", "").split("_")
+        
+        for workflow in found_workflows:
+            workflow_name = workflow['pipeline_name'].lower()
+            
+            # Check for keyword matches
+            matches = sum(1 for keyword in pipeline_keywords if keyword in workflow_name)
+            if matches >= 2:  # At least 2 keywords match
+                return {
+                    "workflow_name": workflow['pipeline_name'],
+                    "status": "🔍 SIMILAR FOUND",
+                    "confidence": "Medium",
+                    "notes": f"Similar workflow found with {matches} keyword matches"
+                }
+        
+        # If no similar match found, list available workflows
+        available_workflows = [w['pipeline_name'] for w in found_workflows]
+        return {
+            "workflow_name": f"Available: {', '.join(available_workflows[:3])}{'...' if len(available_workflows) > 3 else ''}",
+            "status": "❌ NO MATCH FOUND",
+            "confidence": "Low",
+            "notes": f"No matching workflow found. Available workflows: {len(available_workflows)}"
+        }
     
     def format_sheet(self, ws):
         """Format Excel sheet with basic styling"""
