@@ -11,8 +11,8 @@ from collections import defaultdict
 
 class RepositoryAnalyzer:
     """
-    Advanced repository analyzer that can compare Hadoop and Azure Databricks repositories
-    by analyzing code content, transformations, and business logic
+    Enhanced repository analyzer that automatically pairs Hadoop and Azure Databricks repositories
+    and generates separate Excel mappings for each pair
     """
     
     def __init__(self):
@@ -36,14 +36,112 @@ class RepositoryAnalyzer:
             'dedupe': ['dedupe', 'distinct', 'unique', 'duplicate']
         }
     
+    def find_repository_pairs(self, base_path):
+        """Find all Hadoop-Databricks repository pairs"""
+        base_path = Path(base_path)
+        
+        # Find all Hadoop repos (starting with app-)
+        hadoop_repos = [d for d in base_path.iterdir() if d.is_dir() and d.name.startswith('app-')]
+        
+        # Find all Databricks repos (not starting with app-)
+        databricks_repos = [d for d in base_path.iterdir() if d.is_dir() and not d.name.startswith('app-')]
+        
+        print(f"Found {len(hadoop_repos)} Hadoop repositories:")
+        for repo in hadoop_repos:
+            print(f"  - {repo.name}")
+        
+        print(f"\nFound {len(databricks_repos)} Databricks repositories:")
+        for repo in databricks_repos:
+            print(f"  - {repo.name}")
+        
+        # Create pairs based on naming patterns
+        pairs = []
+        
+        for hadoop_repo in hadoop_repos:
+            hadoop_name = hadoop_repo.name.replace('app-', '')  # Remove app- prefix
+            
+            # Try to find matching Databricks repo
+            matching_databricks = None
+            
+            # Direct name match
+            for databricks_repo in databricks_repos:
+                if databricks_repo.name.lower() == hadoop_name.lower():
+                    matching_databricks = databricks_repo
+                    break
+            
+            # If no direct match, try partial matches
+            if not matching_databricks:
+                for databricks_repo in databricks_repos:
+                    databricks_name = databricks_repo.name.lower()
+                    if (hadoop_name.lower() in databricks_name or 
+                        databricks_name in hadoop_name.lower() or
+                        self._calculate_name_similarity(hadoop_name, databricks_name) > 0.6):
+                        matching_databricks = databricks_repo
+                        break
+            
+            if matching_databricks:
+                pairs.append({
+                    'hadoop_repo': hadoop_repo,
+                    'databricks_repo': matching_databricks,
+                    'hadoop_name': hadoop_repo.name,
+                    'databricks_name': matching_databricks.name,
+                    'pair_name': f"{hadoop_repo.name}_to_{matching_databricks.name}"
+                })
+                print(f"✅ Paired: {hadoop_repo.name} ↔ {matching_databricks.name}")
+            else:
+                print(f"⚠️ No match found for: {hadoop_repo.name}")
+        
+        return pairs
+    
+    def _calculate_name_similarity(self, name1, name2):
+        """Calculate similarity between two names"""
+        name1_lower = name1.lower()
+        name2_lower = name2.lower()
+        
+        # Check for common substrings
+        common_chars = 0
+        for char in name1_lower:
+            if char in name2_lower:
+                common_chars += 1
+        
+        return common_chars / max(len(name1_lower), len(name2_lower))
+    
+    def analyze_repository_pair(self, hadoop_path, databricks_path):
+        """Analyze a single Hadoop-Databricks repository pair"""
+        print(f"\n{'='*80}")
+        print(f"ANALYZING PAIR: {Path(hadoop_path).name} ↔ {Path(databricks_path).name}")
+        print(f"{'='*80}")
+        
+        # Reset for this pair
+        self.hadoop_processes = []
+        self.databricks_processes = []
+        self.mappings = []
+        
+        # Analyze Hadoop repository
+        print(f"\n🔍 Analyzing Hadoop repository: {hadoop_path}")
+        self.analyze_hadoop_repository(hadoop_path)
+        
+        # Analyze Databricks repository
+        print(f"\n🔍 Analyzing Databricks repository: {databricks_path}")
+        self.analyze_databricks_repository(databricks_path)
+        
+        # Create mappings
+        print(f"\n🔗 Creating process mappings...")
+        self.create_mappings()
+        
+        return {
+            'hadoop_processes': len(self.hadoop_processes),
+            'databricks_processes': len(self.databricks_processes),
+            'mappings': len(self.mappings)
+        }
+    
     def analyze_hadoop_repository(self, hadoop_path):
         """Analyze Hadoop repository structure and content"""
-        print(f"Analyzing Hadoop repository: {hadoop_path}")
-        
         hadoop_path = Path(hadoop_path)
         
         # Analyze Pig scripts
         pig_files = list(hadoop_path.rglob("*.pig"))
+        print(f"  📄 Found {len(pig_files)} Pig scripts")
         for pig_file in pig_files:
             process = self.analyze_pig_script(pig_file)
             if process:
@@ -51,6 +149,7 @@ class RepositoryAnalyzer:
         
         # Analyze PySpark scripts
         py_files = list(hadoop_path.rglob("*.py"))
+        print(f"  📄 Found {len(py_files)} Python scripts")
         for py_file in py_files:
             process = self.analyze_pyspark_script(py_file)
             if process:
@@ -58,21 +157,21 @@ class RepositoryAnalyzer:
         
         # Analyze SQL files
         sql_files = list(hadoop_path.rglob("*.sql"))
+        print(f"  📄 Found {len(sql_files)} SQL scripts")
         for sql_file in sql_files:
             process = self.analyze_sql_script(sql_file)
             if process:
                 self.hadoop_processes.append(process)
         
-        print(f"Found {len(self.hadoop_processes)} Hadoop processes")
+        print(f"  ✅ Analyzed {len(self.hadoop_processes)} Hadoop processes")
     
     def analyze_databricks_repository(self, databricks_path):
         """Analyze Azure Databricks repository structure and content"""
-        print(f"Analyzing Databricks repository: {databricks_path}")
-        
         databricks_path = Path(databricks_path)
         
         # Analyze Python notebooks
         py_files = list(databricks_path.rglob("*.py"))
+        print(f"  📄 Found {len(py_files)} Python notebooks")
         for py_file in py_files:
             process = self.analyze_databricks_notebook(py_file)
             if process:
@@ -80,6 +179,7 @@ class RepositoryAnalyzer:
         
         # Analyze SQL notebooks
         sql_files = list(databricks_path.rglob("*.sql"))
+        print(f"  📄 Found {len(sql_files)} SQL notebooks")
         for sql_file in sql_files:
             process = self.analyze_databricks_sql(sql_file)
             if process:
@@ -87,12 +187,13 @@ class RepositoryAnalyzer:
         
         # Analyze Scala notebooks
         scala_files = list(databricks_path.rglob("*.scala"))
+        print(f"  📄 Found {len(scala_files)} Scala notebooks")
         for scala_file in scala_files:
             process = self.analyze_scala_notebook(scala_file)
             if process:
                 self.databricks_processes.append(process)
         
-        print(f"Found {len(self.databricks_processes)} Databricks processes")
+        print(f"  ✅ Analyzed {len(self.databricks_processes)} Databricks processes")
     
     def analyze_pig_script(self, pig_file):
         """Analyze Pig script content and extract business logic"""
@@ -129,7 +230,7 @@ class RepositoryAnalyzer:
             return process
             
         except Exception as e:
-            print(f"Error analyzing Pig script {pig_file}: {e}")
+            print(f"    ⚠️ Error analyzing Pig script {pig_file}: {e}")
             return None
     
     def analyze_pyspark_script(self, py_file):
@@ -167,7 +268,7 @@ class RepositoryAnalyzer:
             return process
             
         except Exception as e:
-            print(f"Error analyzing PySpark script {py_file}: {e}")
+            print(f"    ⚠️ Error analyzing PySpark script {py_file}: {e}")
             return None
     
     def analyze_databricks_notebook(self, py_file):
@@ -205,7 +306,7 @@ class RepositoryAnalyzer:
             return process
             
         except Exception as e:
-            print(f"Error analyzing Databricks notebook {py_file}: {e}")
+            print(f"    ⚠️ Error analyzing Databricks notebook {py_file}: {e}")
             return None
     
     def analyze_sql_script(self, sql_file):
@@ -240,7 +341,7 @@ class RepositoryAnalyzer:
             return process
             
         except Exception as e:
-            print(f"Error analyzing SQL script {sql_file}: {e}")
+            print(f"    ⚠️ Error analyzing SQL script {sql_file}: {e}")
             return None
     
     def analyze_databricks_sql(self, sql_file):
@@ -276,7 +377,7 @@ class RepositoryAnalyzer:
             return process
             
         except Exception as e:
-            print(f"Error analyzing Scala notebook {scala_file}: {e}")
+            print(f"    ⚠️ Error analyzing Scala notebook {scala_file}: {e}")
             return None
     
     def extract_pig_loads(self, content):
@@ -562,8 +663,6 @@ class RepositoryAnalyzer:
     
     def create_mappings(self):
         """Create mappings between Hadoop and Databricks processes"""
-        print("Creating process mappings...")
-        
         for hadoop_process in self.hadoop_processes:
             best_matches = []
             
@@ -587,8 +686,6 @@ class RepositoryAnalyzer:
                     'all_matches': best_matches[:5]  # Top 5 matches
                 }
                 self.mappings.append(mapping)
-        
-        print(f"Created {len(self.mappings)} process mappings")
     
     def calculate_similarity(self, hadoop_process, databricks_process):
         """Calculate similarity between Hadoop and Databricks processes"""
@@ -659,13 +756,13 @@ class RepositoryAnalyzer:
         
         return factors
     
-    def create_excel_mapping(self, output_file="REPOSITORY_PROCESS_MAPPING.xlsx"):
+    def create_excel_mapping(self, output_file, pair_name):
         """Create Excel file with process mappings"""
         wb = openpyxl.Workbook()
         wb.remove(wb.active)
         
         # Create Process Mappings sheet
-        self.create_process_mappings_sheet(wb)
+        self.create_process_mappings_sheet(wb, pair_name)
         
         # Create Hadoop Processes sheet
         self.create_hadoop_processes_sheet(wb)
@@ -677,11 +774,16 @@ class RepositoryAnalyzer:
         self.create_similarity_analysis_sheet(wb)
         
         wb.save(output_file)
-        print(f"Excel mapping file created: {output_file}")
+        print(f"  📊 Excel mapping file created: {output_file}")
     
-    def create_process_mappings_sheet(self, wb):
+    def create_process_mappings_sheet(self, wb, pair_name):
         """Create Process Mappings sheet"""
         ws = wb.create_sheet("Process_Mappings")
+        
+        # Add title
+        ws['A1'] = f"Repository Process Mapping: {pair_name}"
+        ws['A1'].font = Font(size=16, bold=True)
+        ws.merge_cells('A1:K1')
         
         headers = [
             "Hadoop Process", "Hadoop Type", "Hadoop Path", "Hadoop Business Logic",
@@ -842,48 +944,117 @@ class RepositoryAnalyzer:
                 cell.border = thin_border
 
 def main():
-    """Main function to run the repository analyzer"""
-    analyzer = RepositoryAnalyzer()
-    
-    # Get repository paths from user
-    print("=== Repository Process Mapping Tool ===")
-    print("This tool analyzes Hadoop and Azure Databricks repositories to find equivalent processes.")
+    """Main function to run the enhanced repository analyzer"""
+    print("=" * 80)
+    print("🚀 ENHANCED REPOSITORY PROCESS MAPPING TOOL")
+    print("=" * 80)
+    print("This tool automatically pairs Hadoop and Azure Databricks repositories")
+    print("and generates separate Excel mappings for each pair.")
     print()
     
-    hadoop_path = input("Enter Hadoop repository path: ").strip()
-    databricks_path = input("Enter Azure Databricks repository path: ").strip()
+    # Get base path containing all repositories
+    base_path = input("Enter the path containing all repositories: ").strip()
     
-    if not hadoop_path or not databricks_path:
-        print("Error: Both repository paths are required!")
+    if not base_path:
+        print("Error: Repository path is required!")
         return
     
-    if not os.path.exists(hadoop_path):
-        print(f"Error: Hadoop repository path does not exist: {hadoop_path}")
+    if not os.path.exists(base_path):
+        print(f"Error: Repository path does not exist: {base_path}")
         return
     
-    if not os.path.exists(databricks_path):
-        print(f"Error: Databricks repository path does not exist: {databricks_path}")
+    # Initialize analyzer
+    analyzer = RepositoryAnalyzer()
+    
+    # Find repository pairs
+    print(f"\n🔍 Scanning for repository pairs in: {base_path}")
+    pairs = analyzer.find_repository_pairs(base_path)
+    
+    if not pairs:
+        print("❌ No repository pairs found!")
         return
     
-    # Analyze repositories
-    analyzer.analyze_hadoop_repository(hadoop_path)
-    analyzer.analyze_databricks_repository(databricks_path)
+    print(f"\n✅ Found {len(pairs)} repository pairs to analyze")
     
-    # Create mappings
-    analyzer.create_mappings()
+    # Analyze each pair and generate Excel files
+    results = []
     
-    # Create Excel output
-    output_file = input("Enter output Excel filename (default: REPOSITORY_PROCESS_MAPPING.xlsx): ").strip()
-    if not output_file:
-        output_file = "REPOSITORY_PROCESS_MAPPING.xlsx"
+    for i, pair in enumerate(pairs, 1):
+        print(f"\n{'='*80}")
+        print(f"📊 PROCESSING PAIR {i}/{len(pairs)}: {pair['pair_name']}")
+        print(f"{'='*80}")
+        
+        try:
+            # Analyze the pair
+            stats = analyzer.analyze_repository_pair(
+                pair['hadoop_repo'], 
+                pair['databricks_repo']
+            )
+            
+            # Generate Excel file
+            output_file = f"REPOSITORY_MAPPING_{pair['pair_name']}.xlsx"
+            analyzer.create_excel_mapping(output_file, pair['pair_name'])
+            
+            results.append({
+                'pair_name': pair['pair_name'],
+                'hadoop_name': pair['hadoop_name'],
+                'databricks_name': pair['databricks_name'],
+                'output_file': output_file,
+                'hadoop_processes': stats['hadoop_processes'],
+                'databricks_processes': stats['databricks_processes'],
+                'mappings': stats['mappings'],
+                'status': 'Success'
+            })
+            
+            print(f"✅ Completed: {pair['pair_name']}")
+            
+        except Exception as e:
+            print(f"❌ Error processing {pair['pair_name']}: {e}")
+            results.append({
+                'pair_name': pair['pair_name'],
+                'hadoop_name': pair['hadoop_name'],
+                'databricks_name': pair['databricks_name'],
+                'output_file': 'N/A',
+                'hadoop_processes': 0,
+                'databricks_processes': 0,
+                'mappings': 0,
+                'status': f'Error: {e}'
+            })
     
-    analyzer.create_excel_mapping(output_file)
+    # Print final summary
+    print(f"\n{'='*80}")
+    print("🎯 FINAL SUMMARY")
+    print(f"{'='*80}")
     
-    print(f"\nAnalysis complete!")
-    print(f"Found {len(analyzer.hadoop_processes)} Hadoop processes")
-    print(f"Found {len(analyzer.databricks_processes)} Databricks processes")
-    print(f"Created {len(analyzer.mappings)} process mappings")
-    print(f"Results saved to: {output_file}")
+    successful = [r for r in results if r['status'] == 'Success']
+    failed = [r for r in results if r['status'] != 'Success']
+    
+    print(f"✅ Successful: {len(successful)}")
+    print(f"❌ Failed: {len(failed)}")
+    
+    if successful:
+        print(f"\n📊 Generated Excel Files:")
+        total_hadoop = sum(r['hadoop_processes'] for r in successful)
+        total_databricks = sum(r['databricks_processes'] for r in successful)
+        total_mappings = sum(r['mappings'] for r in successful)
+        
+        for result in successful:
+            print(f"  📄 {result['output_file']}")
+            print(f"     Hadoop: {result['hadoop_processes']} processes")
+            print(f"     Databricks: {result['databricks_processes']} processes")
+            print(f"     Mappings: {result['mappings']} matches")
+        
+        print(f"\n📈 TOTALS:")
+        print(f"   Total Hadoop Processes: {total_hadoop}")
+        print(f"   Total Databricks Processes: {total_databricks}")
+        print(f"   Total Mappings: {total_mappings}")
+    
+    if failed:
+        print(f"\n⚠️ Failed Analyses:")
+        for result in failed:
+            print(f"   ❌ {result['pair_name']}: {result['status']}")
+    
+    print(f"\n🎉 Analysis complete! Check the generated Excel files for detailed mappings.")
 
 if __name__ == "__main__":
     main()
