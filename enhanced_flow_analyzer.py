@@ -1,822 +1,38 @@
-import os
-import re
-import pandas as pd
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from pathlib import Path
-import xml.etree.ElementTree as ET
-from collections import defaultdict, Counter
-import json
+#!/usr/bin/env python3
+"""
+ADF to Hadoop Pipeline Mapper
+=============================
 
-class HadoopPipelineConsolidator:
-    """
-    Consolidates all Hadoop repository pipelines into a single comprehensive Excel report
-    """
-    
+This script reads ADF pipeline names from an Excel file and maps them to 
+Hadoop workflows/coordinators found in all Hadoop repositories.
+
+Features:
+- Reads ADF pipelines from Excel file
+- Scans all Hadoop repositories for workflows/coordinators
+- Maps based on name similarity and repository/category matching
+- Generates comprehensive mapping report with Yes/No mapping status
+"""
+
+import os
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+import re
+from difflib import SequenceMatcher
+
+class ADFHadoopMapper:
     def __init__(self):
-        self.all_pipelines = []
-        self.all_actions = []
-        self.technology_counts = Counter()
-        self.pipeline_counts = Counter()
-        self.repo_summary = {}
+        self.adf_pipelines = []
+        self.hadoop_workflows = []
+        self.hadoop_coordinators = []
+        self.mappings = []
         
-    def find_all_hadoop_repos(self, base_path):
-        """Find all Hadoop repositories in the base path"""
-        base_path = Path(base_path)
-        hadoop_repos = []
-        
-        # Look for directories starting with 'app-'
-        for item in base_path.iterdir():
-            if item.is_dir() and item.name.startswith('app-'):
-                hadoop_repos.append(item)
-        
-        return hadoop_repos
-    
-    def analyze_single_repository(self, repo_path):
-        """Analyze a single Hadoop repository"""
-        repo_path = Path(repo_path)
-        repo_name = repo_path.name
-        
-        print(f"\n🔍 Analyzing repository: {repo_name}")
-        print(f"  📁 Repository path: {repo_path}")
-        
-        # Find Oozie workflows and coordinators
-        workflows = self.find_oozie_workflows(repo_path)
-        coordinators = self.find_oozie_coordinators(repo_path)
-        
-        print(f"  📄 Found {len(workflows)} workflows and {len(coordinators)} coordinators")
-        
-        # Show specific files found for debugging
-        if workflows:
-            print(f"  📋 Workflow files:")
-            for wf in workflows:
-                print(f"    - {wf.relative_to(repo_path)}")
-        
-        if coordinators:
-            print(f"  📋 Coordinator files:")
-            for coord in coordinators:
-                print(f"    - {coord.relative_to(repo_path)}")
-        
-        repo_stats = {
-            'repo_name': repo_name,
-            'workflows': len(workflows),
-            'coordinators': len(coordinators),
-            'total_pipelines': len(workflows) + len(coordinators)
-        }
-        
-        # Analyze workflows
-        for workflow_file in workflows:
-            pipeline_info = self.analyze_workflow(workflow_file, repo_name)
-            if pipeline_info:
-                self.all_pipelines.append(pipeline_info)
-                self.all_actions.extend(pipeline_info.get('actions', []))
-                self.pipeline_counts[repo_name] += 1
-        
-        # Analyze coordinators
-        for coordinator_file in coordinators:
-            coordinator_info = self.analyze_coordinator(coordinator_file, repo_name)
-            if coordinator_info:
-                self.all_pipelines.append(coordinator_info)
-                self.pipeline_counts[repo_name] += 1
-        
-        self.repo_summary[repo_name] = repo_stats
-        
-        print(f"  ✅ Analyzed {repo_stats['total_pipelines']} pipelines")
-        
-        return repo_stats
-    
-    def find_oozie_workflows(self, repo_path):
-        """Find all Oozie workflow files"""
-        workflows = []
-        
-        # Look for ALL workflow files - comprehensive coverage including individual workflows
-        patterns = [
-            "**/*workflow.xml",                  # ALL workflow files (including individual ones)
-            "**/workflow.xml",                   # Main workflow.xml files
-            "**/oozie/**/*workflow.xml",         # CDD-style nested oozie folders
-            "**/workflows/**/*workflow.xml",     # Standard workflows folder
-            "**/workflows/**/oozie/*workflow.xml", # Nested oozie in workflows
-            "**/coordinators/**/*workflow.xml",  # Workflows in coordinators folder
-            "**/jobs/**/*workflow.xml",          # Workflows in jobs folder
-            "**/pipelines/**/*workflow.xml",     # Workflows in pipelines folder
-            "**/processes/**/*workflow.xml",     # Workflows in processes folder
-            "**/etl/**/*workflow.xml",           # Workflows in etl folder
-            "**/data/**/*workflow.xml",          # Workflows in data folder
-            "**/ingestion/**/*workflow.xml",     # Workflows in ingestion folder
-            "**/processing/**/*workflow.xml",    # Workflows in processing folder
-            "**/batch/**/*workflow.xml",         # Workflows in batch folder
-            "**/streaming/**/*workflow.xml",     # Workflows in streaming folder
-            "**/realtime/**/*workflow.xml",      # Workflows in realtime folder
-            "**/scheduled/**/*workflow.xml",     # Workflows in scheduled folder
-            "**/automated/**/*workflow.xml",     # Workflows in automated folder
-            "**/manual/**/*workflow.xml",        # Workflows in manual folder
-            "**/adhoc/**/*workflow.xml",         # Workflows in adhoc folder
-            "**/temp/**/*workflow.xml",          # Workflows in temp folder
-            "**/test/**/*workflow.xml",          # Workflows in test folder
-            "**/dev/**/*workflow.xml",           # Workflows in dev folder
-            "**/prod/**/*workflow.xml",          # Workflows in prod folder
-            "**/staging/**/*workflow.xml",      # Workflows in staging folder
-            "**/qa/**/*workflow.xml"             # Workflows in qa folder
-        ]
-        
-        for pattern in patterns:
-            found_files = list(repo_path.rglob(pattern))
-            if found_files:
-                print(f"    Pattern '{pattern}': Found {len(found_files)} files")
-                workflows.extend(found_files)
-        
-        unique_workflows = list(set(workflows))  # Remove duplicates
-        print(f"    Total unique workflows found: {len(unique_workflows)}")
-        
-        return unique_workflows
-    
-    def find_oozie_coordinators(self, repo_path):
-        """Find all Oozie coordinator files"""
-        coordinators = []
-        
-        # Look for coordinator.xml files - comprehensive coverage
-        patterns = [
-            "**/coordinator.xml",                    # Any coordinator.xml anywhere
-            "**/coordinators/**/coordinator.xml",    # Standard coordinators folder
-            "**/oozie/**/coordinator.xml",           # CDD-style nested oozie folders
-            "**/workflows/**/coordinator.xml",       # Coordinators in workflows folder
-            "**/jobs/**/coordinator.xml",            # Coordinators in jobs folder
-            "**/pipelines/**/coordinator.xml",       # Coordinators in pipelines folder
-            "**/processes/**/coordinator.xml",       # Coordinators in processes folder
-            "**/etl/**/coordinator.xml",             # Coordinators in etl folder
-            "**/data/**/coordinator.xml",            # Coordinators in data folder
-            "**/ingestion/**/coordinator.xml",       # Coordinators in ingestion folder
-            "**/processing/**/coordinator.xml",      # Coordinators in processing folder
-            "**/batch/**/coordinator.xml",          # Coordinators in batch folder
-            "**/streaming/**/coordinator.xml",      # Coordinators in streaming folder
-            "**/realtime/**/coordinator.xml",       # Coordinators in realtime folder
-            "**/scheduled/**/coordinator.xml",      # Coordinators in scheduled folder
-            "**/automated/**/coordinator.xml",      # Coordinators in automated folder
-            "**/manual/**/coordinator.xml",         # Coordinators in manual folder
-            "**/adhoc/**/coordinator.xml",          # Coordinators in adhoc folder
-            "**/temp/**/coordinator.xml",           # Coordinators in temp folder
-            "**/test/**/coordinator.xml",           # Coordinators in test folder
-            "**/dev/**/coordinator.xml",            # Coordinators in dev folder
-            "**/prod/**/coordinator.xml",           # Coordinators in prod folder
-            "**/staging/**/coordinator.xml",        # Coordinators in staging folder
-            "**/qa/**/coordinator.xml"              # Coordinators in qa folder
-        ]
-        
-        for pattern in patterns:
-            found_files = list(repo_path.rglob(pattern))
-            if found_files:
-                print(f"    Pattern '{pattern}': Found {len(found_files)} files")
-                coordinators.extend(found_files)
-        
-        unique_coordinators = list(set(coordinators))  # Remove duplicates
-        print(f"    Total unique coordinators found: {len(unique_coordinators)}")
-        
-        return unique_coordinators
-    
-    def analyze_workflow(self, workflow_file, repo_name):
-        """Analyze an Oozie workflow file"""
-        try:
-            tree = ET.parse(workflow_file)
-            root = tree.getroot()
-            
-            # Extract workflow name
-            workflow_name = root.get('name', workflow_file.stem)
-            
-            # Extract actions
-            actions = self.extract_workflow_actions(root, workflow_file)
-            
-            # Determine processing order
-            processing_order = self.determine_processing_order(actions)
-            
-            # Count technologies
-            technologies = [action['technology'] for action in actions]
-            tech_counts = Counter(technologies)
-            
-            pipeline_info = {
-                'repo_name': repo_name,
-                'pipeline_name': workflow_name,
-                'pipeline_type': 'Workflow',
-                'file_path': str(workflow_file.relative_to(workflow_file.parents[2])),
-                'actions': actions,
-                'processing_order': processing_order,
-                'technologies': technologies,
-                'technology_counts': dict(tech_counts),
-                'total_actions': len(actions)
-            }
-            
-            # Update global technology counts
-            for tech in technologies:
-                self.technology_counts[tech] += 1
-            
-            return pipeline_info
-            
-        except Exception as e:
-            print(f"    ⚠️ Error analyzing workflow {workflow_file}: {e}")
-            return None
-    
-    def analyze_coordinator(self, coordinator_file, repo_name):
-        """Analyze an Oozie coordinator file"""
-        try:
-            tree = ET.parse(coordinator_file)
-            root = tree.getroot()
-            
-            # Extract coordinator name
-            coordinator_name = root.get('name', coordinator_file.stem)
-            
-            # Extract workflow reference
-            workflow_ref = self.extract_workflow_reference(root)
-            
-            coordinator_info = {
-                'repo_name': repo_name,
-                'pipeline_name': coordinator_name,
-                'pipeline_type': 'Coordinator',
-                'file_path': str(coordinator_file.relative_to(coordinator_file.parents[2])),
-                'workflow_reference': workflow_ref,
-                'actions': [],
-                'processing_order': [],
-                'technologies': [],
-                'technology_counts': {},
-                'total_actions': 0
-            }
-            
-            return coordinator_info
-            
-        except Exception as e:
-            print(f"    ⚠️ Error analyzing coordinator {coordinator_file}: {e}")
-            return None
-    
-    def extract_workflow_reference(self, root):
-        """Extract workflow reference from coordinator"""
-        try:
-            # Look for workflow action
-            workflow_elem = root.find('.//{uri:oozie:coordinator:0.2}workflow')
-            if workflow_elem is not None:
-                app_path = workflow_elem.find('{uri:oozie:coordinator:0.2}app-path')
-                if app_path is not None:
-                    return app_path.text
-        except:
-            pass
-        
-        # Fallback: look for any workflow reference
-        for elem in root.iter():
-            if 'workflow' in elem.tag.lower() and elem.text:
-                return elem.text
-        
-        return "N/A"
-    
-    def extract_workflow_actions(self, root, workflow_file):
-        """Extract actions from workflow"""
-        actions = []
-        
-        # Handle different namespace patterns
-        namespaces = [
-            '{uri:oozie:workflow:0.5}',
-            '{uri:oozie:workflow:0.2}',
-            '{uri:oozie:workflow:0.1}',
-            '{uri:oozie:workflow:0.3}',
-            '{uri:oozie:workflow:0.4}',
-            ''
-        ]
-        
-        action_elements = []
-        for ns in namespaces:
-            action_elements = root.findall(f'.//{ns}action')
-            if action_elements:
-                print(f"    Found {len(action_elements)} actions with namespace: {ns}")
-                break
-        
-        # If no actions found with namespaces, try without namespace
-        if not action_elements:
-            action_elements = root.findall('.//action')
-            print(f"    Found {len(action_elements)} actions without namespace")
-        
-        for i, action_elem in enumerate(action_elements):
-            action_info = self.parse_action(action_elem, i + 1, workflow_file)
-            if action_info:
-                actions.append(action_info)
-                print(f"    Parsed action {i+1}: {action_info['action_name']} ({action_info['technology']})")
-        
-        return actions
-    
-    def parse_action(self, action_elem, order, workflow_file):
-        """Parse individual action element"""
-        try:
-            action_name = action_elem.get('name', f'action_{order}')
-            
-            # Determine technology and script path
-            technology = "Unknown"
-            script_path = "N/A"
-            
-            # Debug: Print action element structure
-            print(f"    Analyzing action: {action_name}")
-            
-            # Check for Pig actions first (before Spark)
-            pig_patterns = [
-                './/{uri:oozie:pig-action:0.1}pig',
-                './/{uri:oozie:pig-action:0.2}pig',
-                './/{uri:oozie:workflow:0.5}pig',
-                './/{uri:oozie:workflow:0.2}pig',
-                './/pig'
-            ]
-            
-            pig_elem = None
-            for pattern in pig_patterns:
-                pig_elem = action_elem.find(pattern)
-                if pig_elem is not None:
-                    break
-            
-            if pig_elem is not None:
-                technology = "Pig"
-                # Look for script with multiple patterns
-                script_patterns = [
-                    '{uri:oozie:pig-action:0.1}script',
-                    '{uri:oozie:pig-action:0.2}script',
-                    '{uri:oozie:workflow:0.5}script',
-                    '{uri:oozie:workflow:0.2}script',
-                    'script'
-                ]
-                
-                script_elem = None
-                for pattern in script_patterns:
-                    script_elem = pig_elem.find(pattern)
-                    if script_elem is not None:
-                        break
-                
-                if script_elem is not None:
-                    script_path = script_elem.text or "N/A"
-            
-            # Check for Spark actions with multiple namespace patterns
-            if pig_elem is None:  # Only check Spark if Pig not found
-                spark_patterns = [
-                    './/{uri:oozie:spark-action:0.1}spark',
-                    './/{uri:oozie:spark-action:0.2}spark',
-                    './/{uri:oozie:spark-action:0.3}spark',
-                    './/spark'
-                ]
-                
-                spark_elem = None
-                for pattern in spark_patterns:
-                    spark_elem = action_elem.find(pattern)
-                    if spark_elem is not None:
-                        break
-            
-            if spark_elem is not None:
-                technology = "Spark"
-                # Look for jar or script with multiple patterns
-                jar_patterns = [
-                    '{uri:oozie:spark-action:0.1}jar',
-                    '{uri:oozie:spark-action:0.2}jar',
-                    'jar'
-                ]
-                
-                jar_elem = None
-                for pattern in jar_patterns:
-                    jar_elem = spark_elem.find(pattern)
-                    if jar_elem is not None:
-                        break
-                
-                if jar_elem is not None:
-                    script_path = jar_elem.text or "N/A"
-                else:
-                    # Look for script element
-                    script_patterns = [
-                        '{uri:oozie:spark-action:0.1}script',
-                        '{uri:oozie:spark-action:0.2}script',
-                        'script'
-                    ]
-                    
-                    script_elem = None
-                    for pattern in script_patterns:
-                        script_elem = spark_elem.find(pattern)
-                        if script_elem is not None:
-                            break
-                    
-                    if script_elem is not None:
-                        script_path = script_elem.text or "N/A"
-            
-            # Check for Pig actions
-            pig_elem = action_elem.find('.//pig')
-            if pig_elem is not None:
-                technology = "Pig"
-                script_elem = pig_elem.find('script')
-                if script_elem is not None:
-                    script_path = script_elem.text or "N/A"
-            
-            # Check for Hive actions with multiple namespace patterns
-            hive_patterns = [
-                './/{uri:oozie:hive-action:0.2}hive',
-                './/{uri:oozie:hive-action:0.1}hive',
-                './/hive'
-            ]
-            
-            hive_elem = None
-            for pattern in hive_patterns:
-                hive_elem = action_elem.find(pattern)
-                if hive_elem is not None:
-                    break
-            
-            if hive_elem is not None:
-                technology = "Hive"
-                script_patterns = [
-                    '{uri:oozie:hive-action:0.2}script',
-                    '{uri:oozie:hive-action:0.1}script',
-                    'script'
-                ]
-                
-                script_elem = None
-                for pattern in script_patterns:
-                    script_elem = hive_elem.find(pattern)
-                    if script_elem is not None:
-                        break
-                
-                if script_elem is not None:
-                    script_path = script_elem.text or "N/A"
-            
-            # Check for Shell actions with multiple namespace patterns
-            shell_patterns = [
-                './/{uri:oozie:shell-action:0.1}shell',
-                './/{uri:oozie:shell-action:0.2}shell',
-                './/{uri:oozie:shell-action:0.3}shell',
-                './/shell'
-            ]
-            
-            shell_elem = None
-            for pattern in shell_patterns:
-                shell_elem = action_elem.find(pattern)
-                if shell_elem is not None:
-                    break
-            
-            if shell_elem is not None:
-                technology = "Shell"
-                exec_patterns = [
-                    '{uri:oozie:shell-action:0.1}exec',
-                    '{uri:oozie:shell-action:0.2}exec',
-                    'exec'
-                ]
-                
-                exec_elem = None
-                for pattern in exec_patterns:
-                    exec_elem = shell_elem.find(pattern)
-                    if exec_elem is not None:
-                        break
-                
-                if exec_elem is not None:
-                    script_path = exec_elem.text or "N/A"
-            
-            # Check for Java actions with multiple namespace patterns
-            java_patterns = [
-                './/{uri:oozie:java-action:0.1}java',
-                './/{uri:oozie:java-action:0.2}java',
-                './/java'
-            ]
-            
-            java_elem = None
-            for pattern in java_patterns:
-                java_elem = action_elem.find(pattern)
-                if java_elem is not None:
-                    break
-            
-            if java_elem is not None:
-                technology = "Java"
-                main_class_patterns = [
-                    '{uri:oozie:java-action:0.1}main-class',
-                    '{uri:oozie:java-action:0.2}main-class',
-                    'main-class'
-                ]
-                
-                main_class = None
-                for pattern in main_class_patterns:
-                    main_class = java_elem.find(pattern)
-                    if main_class is not None:
-                        break
-                
-                if main_class is not None:
-                    script_path = main_class.text or "N/A"
-            
-            print(f"    Detected: {technology} - {script_path}")
-            
-            return {
-                'action_name': action_name,
-                'technology': technology,
-                'script_path': script_path,
-                'processing_order': order
-            }
-            
-        except Exception as e:
-            print(f"    ⚠️ Error parsing action: {e}")
-            return None
-    
-    def determine_processing_order(self, actions):
-        """Determine the processing order of actions"""
-        if not actions:
-            return []
-        
-        # Actions are already in order based on XML parsing
-        return [f"{i+1}. {action['action_name']} ({action['technology']})" 
-                for i, action in enumerate(actions)]
-    
-    def create_consolidated_excel(self, output_file, adf_pipelines=None):
-        """Create consolidated Excel report"""
-        wb = openpyxl.Workbook()
-        wb.remove(wb.active)
-        
-        # Create sheets
-        self.create_pipeline_overview_sheet(wb)
-        self.create_action_details_sheet(wb)
-        self.create_technology_summary_sheet(wb)
-        self.create_repository_summary_sheet(wb)
-        self.create_pipeline_mapping_sheet(wb)
-        
-        # Create dynamic ADF mapping if pipelines provided
-        if adf_pipelines:
-            self.create_dynamic_adf_mapping(wb, adf_pipelines)
-        else:
-            self.create_adf_mapping_template(wb)
-        
-        wb.save(output_file)
-        print(f"\n📊 Consolidated Excel report created: {output_file}")
-    
-    def create_pipeline_overview_sheet(self, wb):
-        """Create Pipeline Overview sheet"""
-        ws = wb.create_sheet("Pipeline_Overview")
-        
-        # Add title
-        ws['A1'] = "Hadoop Pipeline Overview - All Repositories"
-        ws['A1'].font = Font(size=16, bold=True)
-        
-        headers = [
-            "Repository", "Pipeline Name", "Pipeline Type", "File Path", 
-            "Total Actions", "Technologies", "Processing Order"
-        ]
-        ws.append(headers)
-        
-        for pipeline in self.all_pipelines:
-            row = [
-                pipeline['repo_name'],
-                pipeline['pipeline_name'],
-                pipeline['pipeline_type'],
-                pipeline['file_path'],
-                pipeline['total_actions'],
-                ', '.join(pipeline['technologies']),
-                ' | '.join(pipeline['processing_order'])
-            ]
-            ws.append(row)
-        
-        self.format_sheet(ws)
-    
-    def create_action_details_sheet(self, wb):
-        """Create Action Details sheet"""
-        ws = wb.create_sheet("Action_Details")
-        
-        # Add title
-        ws['A1'] = "Pipeline Action Details"
-        ws['A1'].font = Font(size=16, bold=True)
-        
-        headers = [
-            "Repository", "Pipeline Name", "Action Name", "Technology", 
-            "Script Path", "Processing Order"
-        ]
-        ws.append(headers)
-        
-        for pipeline in self.all_pipelines:
-            for action in pipeline['actions']:
-                row = [
-                    pipeline['repo_name'],
-                    pipeline['pipeline_name'],
-                    action['action_name'],
-                    action['technology'],
-                    action['script_path'],
-                    action['processing_order']
-                ]
-                ws.append(row)
-        
-        self.format_sheet(ws)
-    
-    def create_technology_summary_sheet(self, wb):
-        """Create Technology Summary sheet"""
-        ws = wb.create_sheet("Technology_Summary")
-        
-        # Add title
-        ws['A1'] = "Technology Usage Summary"
-        ws['A1'].font = Font(size=16, bold=True)
-        
-        headers = ["Technology", "Total Count", "Percentage"]
-        ws.append(headers)
-        
-        total_technologies = sum(self.technology_counts.values())
-        
-        for tech, count in self.technology_counts.most_common():
-            percentage = (count / total_technologies * 100) if total_technologies > 0 else 0
-            row = [tech, count, f"{percentage:.1f}%"]
-            ws.append(row)
-        
-        # Add summary row
-        ws.append([])
-        ws.append(["TOTAL", total_technologies, "100.0%"])
-        
-        self.format_sheet(ws)
-    
-    def create_repository_summary_sheet(self, wb):
-        """Create Repository Summary sheet"""
-        ws = wb.create_sheet("Repository_Summary")
-        
-        # Add title
-        ws['A1'] = "Repository Summary"
-        ws['A1'].font = Font(size=16, bold=True)
-        
-        headers = [
-            "Repository", "Total Pipelines", "Workflows", "Coordinators", 
-            "Total Actions", "Technologies Used"
-        ]
-        ws.append(headers)
-        
-        for repo_name, stats in self.repo_summary.items():
-            # Count technologies for this repo
-            repo_technologies = []
-            for pipeline in self.all_pipelines:
-                if pipeline['repo_name'] == repo_name:
-                    repo_technologies.extend(pipeline['technologies'])
-            
-            tech_counts = Counter(repo_technologies)
-            tech_summary = ', '.join([f"{tech}({count})" for tech, count in tech_counts.items()])
-            
-            row = [
-                repo_name,
-                stats['total_pipelines'],
-                stats['workflows'],
-                stats['coordinators'],
-                sum(len(p['actions']) for p in self.all_pipelines if p['repo_name'] == repo_name),
-                tech_summary
-            ]
-            ws.append(row)
-        
-        # Add totals row
-        total_pipelines = sum(stats['total_pipelines'] for stats in self.repo_summary.values())
-        total_workflows = sum(stats['workflows'] for stats in self.repo_summary.values())
-        total_coordinators = sum(stats['coordinators'] for stats in self.repo_summary.values())
-        total_actions = sum(len(p['actions']) for p in self.all_pipelines)
-        
-        ws.append([])
-        ws.append([
-            "TOTAL",
-            total_pipelines,
-            total_workflows,
-            total_coordinators,
-            total_actions,
-            f"{len(self.technology_counts)} different technologies"
-        ])
-        
-        self.format_sheet(ws)
-    
-    def create_pipeline_mapping_sheet(self, wb):
-        """Create Pipeline Mapping sheet - Azure Databricks to Hadoop workflows"""
-        ws = wb.create_sheet("Pipeline_Mapping")
-        
-        # Add title
-        ws['A1'] = "Azure Databricks to Hadoop Pipeline Mapping"
-        ws['A1'].font = Font(size=16, bold=True)
-        
-        headers = [
-            "S.No", "Project", "Azure Databricks Pipeline", "Hadoop Repository", 
-            "Mapped Hadoop Workflow", "Mapping Status", "Confidence Level", "Notes"
-        ]
-        ws.append(headers)
-        
-        # Define the mapping from your table
-        azure_pipelines = [
-            # DATA INGESTION
-            {"sno": 1, "project": "DATA INGESTION", "pipeline": "pl_dataingestion_abi_group1", "repo": "app-data-ingestion"},
-            {"sno": 2, "project": "", "pipeline": "pl_dataingestion_abi_group2", "repo": "app-data-ingestion"},
-            {"sno": 3, "project": "", "pipeline": "pl_dataingestion_big_tables", "repo": "app-data-ingestion"},
-            {"sno": 4, "project": "", "pipeline": "pl_dataingestion_fnf", "repo": "app-data-ingestion"},
-            
-            # CDD
-            {"sno": 5, "project": "CDD", "pipeline": "pl_cdd_es_prebdf", "repo": "app-cdd"},
-            {"sno": 6, "project": "", "pipeline": "pl_cdd_bdf_download", "repo": "app-cdd"},
-            {"sno": 7, "project": "", "pipeline": "pl_cdd_es_postbdf", "repo": "app-cdd"},
-            {"sno": 8, "project": "", "pipeline": "pl_cdd_ie_prebdf", "repo": "app-cdd"},
-            {"sno": 9, "project": "", "pipeline": "pl_cdd_ie_postbdf", "repo": "app-cdd"},
-            {"sno": 10, "project": "", "pipeline": "pl_cdd_tu_prebdf", "repo": "app-cdd"},
-            
-            # GMRN
-            {"sno": 11, "project": "GMRN", "pipeline": "pl_gmrn_ghic", "repo": "app-globalmrn"},
-            {"sno": 12, "project": "", "pipeline": "pl_gmrn_merge", "repo": "app-globalmrn"},
-            
-            # LEAD REPOSITORY
-            {"sno": 13, "project": "LEAD REPOSITORY", "pipeline": "pl_leadrepo_escan_ich_import", "repo": "app-lead-repository"},
-            {"sno": 14, "project": "", "pipeline": "pl_leadrepo_escan_import_fc", "repo": "app-lead-repository"},
-            {"sno": 15, "project": "", "pipeline": "pl_leadrepository_xref", "repo": "app-lead-repository"},
-            
-            # LSB
-            {"sno": 16, "project": "LSB", "pipeline": "pl_leadservicebase", "repo": "app-lead-service"},
-            
-            # LEAD DISCOVERY
-            {"sno": 17, "project": "LEAD DISCOVERY", "pipeline": "pl_leaddiscovery_globalmrn_assign", "repo": "app-lead-discovery"},
-            {"sno": 18, "project": "", "pipeline": "pl_leaddiscovery_medicareleads", "repo": "app-lead-discovery"},
-            {"sno": 19, "project": "", "pipeline": "pl_leaddiscovery_medicaidleads", "repo": "app-lead-discovery"},
-            {"sno": 20, "project": "", "pipeline": "pl_leaddiscovery_lead_propagation", "repo": "app-lead-discovery"},
-            {"sno": 21, "project": "", "pipeline": "pl_leaddiscovery_known_commercial", "repo": "app-lead-discovery"},
-            {"sno": 22, "project": "", "pipeline": "pl_leaddiscovery_leadlookup_knowncommercial", "repo": "app-lead-discovery"},
-            {"sno": 23, "project": "", "pipeline": "pl_leaddiscovery_leadverify", "repo": "app-lead-discovery"},
-            {"sno": 24, "project": "", "pipeline": "pl_leaddiscovery_subdob", "repo": "app-lead-discovery"},
-            
-            # OPS HINTS
-            {"sno": 25, "project": "OPS HINTS", "pipeline": "pl_ops_hints", "repo": "app-ops-hints"},
-            
-            # HELPERS
-            {"sno": 26, "project": "Helpers", "pipeline": "pl_mbihelper", "repo": "app-coverage-helpers"}
-        ]
-        
-        # Create mapping for each Azure pipeline
-        for azure_pipeline in azure_pipelines:
-            mapped_workflow = self.find_matching_hadoop_workflow(azure_pipeline["pipeline"], azure_pipeline["repo"])
-            
-            row = [
-                azure_pipeline["sno"],
-                azure_pipeline["project"],
-                azure_pipeline["pipeline"],
-                azure_pipeline["repo"],
-                mapped_workflow["workflow_name"],
-                mapped_workflow["status"],
-                mapped_workflow["confidence"],
-                mapped_workflow["notes"]
-            ]
-            ws.append(row)
-        
-        self.format_sheet(ws)
-    
-    def find_matching_hadoop_workflow(self, azure_pipeline_name, repo_name):
-        """Find matching Hadoop workflow for Azure pipeline"""
-        # Direct matches we know exist
-        direct_matches = {
-            "pl_dataingestion_big_tables": {
-                "workflow_name": "big_tables_workflow.xml",
-                "status": "✅ FOUND",
-                "confidence": "High",
-                "notes": "Direct match found in ingest_all folder"
-            },
-            "pl_dataingestion_fnf": {
-                "workflow_name": "sqoop_fnf_workflow.xml", 
-                "status": "✅ FOUND",
-                "confidence": "High",
-                "notes": "Direct match found in ingest_all folder"
-            }
-        }
-        
-        # Check if we have this repository analyzed
-        if repo_name not in self.repo_summary:
-            return {
-                "workflow_name": "N/A",
-                "status": "❌ REPO NOT ANALYZED",
-                "confidence": "N/A",
-                "notes": f"Repository {repo_name} not found in current analysis"
-            }
-        
-        # Check for direct match
-        if azure_pipeline_name in direct_matches:
-            return direct_matches[azure_pipeline_name]
-        
-        # Look for similar workflows in the analyzed pipelines
-        found_workflows = [p for p in self.all_pipelines if p['repo_name'] == repo_name]
-        
-        if not found_workflows:
-            return {
-                "workflow_name": "N/A",
-                "status": "❌ NO WORKFLOWS FOUND",
-                "confidence": "N/A", 
-                "notes": f"No workflows found in {repo_name}"
-            }
-        
-        # Try to find similar workflow names
-        pipeline_keywords = azure_pipeline_name.lower().replace("pl_", "").split("_")
-        
-        for workflow in found_workflows:
-            workflow_name = workflow['pipeline_name'].lower()
-            
-            # Check for keyword matches
-            matches = sum(1 for keyword in pipeline_keywords if keyword in workflow_name)
-            if matches >= 2:  # At least 2 keywords match
-                return {
-                    "workflow_name": workflow['pipeline_name'],
-                    "status": "🔍 SIMILAR FOUND",
-                    "confidence": "Medium",
-                    "notes": f"Similar workflow found with {matches} keyword matches"
-                }
-        
-        # If no similar match found, list available workflows
-        available_workflows = [w['pipeline_name'] for w in found_workflows]
-        return {
-            "workflow_name": f"Available: {', '.join(available_workflows[:3])}{'...' if len(available_workflows) > 3 else ''}",
-            "status": "❌ NO MATCH FOUND",
-            "confidence": "Low",
-            "notes": f"No matching workflow found. Available workflows: {len(available_workflows)}"
-        }
-    
     def read_adf_pipelines_from_excel(self, excel_file):
         """Read ADF pipeline list from Excel file"""
         try:
             # Check if file exists
-            import os
             if not os.path.exists(excel_file):
                 print(f"❌ Excel file not found: {excel_file}")
                 return []
@@ -850,285 +66,460 @@ class HadoopPipelineConsolidator:
             print(f"❌ Error reading ADF Excel file: {e}")
             print(f"   File: {excel_file}")
             print("   Please ensure the file is a valid Excel file (.xlsx format)")
-            print("   and can be opened in Excel")
             return []
     
-    def create_dynamic_adf_mapping(self, wb, adf_pipelines):
-        """Create dynamic ADF Pipeline Mapping sheet"""
-        ws = wb.create_sheet("ADF_Dynamic_Mapping")
+    def find_hadoop_repositories(self, base_path):
+        """Find all Hadoop repositories in the base path"""
+        hadoop_repos = []
+        base_path = Path(base_path)
+        
+        if not base_path.exists():
+            print(f"❌ Base path not found: {base_path}")
+            return []
+        
+        # Look for directories starting with 'app-'
+        for item in base_path.iterdir():
+            if item.is_dir() and item.name.startswith('app-'):
+                hadoop_repos.append(item)
+        
+        print(f"🔍 Found {len(hadoop_repos)} Hadoop repositories:")
+        for repo in hadoop_repos:
+            print(f"  - {repo.name}")
+        
+        return hadoop_repos
+    
+    def scan_hadoop_repository(self, repo_path):
+        """Scan a single Hadoop repository for workflows and coordinators"""
+        repo_name = repo_path.name
+        workflows = []
+        coordinators = []
+        
+        print(f"📁 Scanning repository: {repo_name}")
+        
+        # Find all workflow.xml files
+        workflow_patterns = [
+            "**/*workflow.xml",
+            "**/workflows/**/*workflow.xml",
+            "**/oozie/**/*workflow.xml",
+            "**/pipelines/**/*workflow.xml",
+            "**/dev/**/*workflow.xml"
+        ]
+        
+        for pattern in workflow_patterns:
+            for workflow_file in repo_path.rglob(pattern):
+                if workflow_file.is_file():
+                    workflows.append({
+                        'file_path': str(workflow_file),
+                        'repo_name': repo_name,
+                        'workflow_name': self.extract_workflow_name(workflow_file),
+                        'relative_path': str(workflow_file.relative_to(repo_path))
+                    })
+        
+        # Find all coordinator.xml files
+        coordinator_patterns = [
+            "**/*coordinator.xml",
+            "**/coordinators/**/*coordinator.xml",
+            "**/oozie/**/*coordinator.xml"
+        ]
+        
+        for pattern in coordinator_patterns:
+            for coordinator_file in repo_path.rglob(pattern):
+                if coordinator_file.is_file():
+                    coordinators.append({
+                        'file_path': str(coordinator_file),
+                        'repo_name': repo_name,
+                        'coordinator_name': self.extract_coordinator_name(coordinator_file),
+                        'relative_path': str(coordinator_file.relative_to(repo_path))
+                    })
+        
+        print(f"  📄 Found {len(workflows)} workflows and {len(coordinators)} coordinators")
+        return workflows, coordinators
+    
+    def extract_workflow_name(self, workflow_file):
+        """Extract workflow name from XML file"""
+        try:
+            tree = ET.parse(workflow_file)
+            root = tree.getroot()
+            
+            # Try to get name attribute
+            name = root.get('name')
+            if name:
+                return name
+            
+            # Try to get name from different namespace patterns
+            namespaces = [
+                '{uri:oozie:workflow:0.5}',
+                '{uri:oozie:workflow:0.2}',
+                '{uri:oozie:workflow:0.1}',
+                ''
+            ]
+            
+            for ns in namespaces:
+                name_elem = root.find(f'{ns}name')
+                if name_elem is not None and name_elem.text:
+                    return name_elem.text.strip()
+            
+            # Fallback to filename
+            return workflow_file.stem
+            
+        except Exception as e:
+            print(f"⚠️ Error parsing workflow {workflow_file}: {e}")
+            return workflow_file.stem
+    
+    def extract_coordinator_name(self, coordinator_file):
+        """Extract coordinator name from XML file"""
+        try:
+            tree = ET.parse(coordinator_file)
+            root = tree.getroot()
+            
+            # Try to get name attribute
+            name = root.get('name')
+            if name:
+                return name
+            
+            # Try to get name from different namespace patterns
+            namespaces = [
+                '{uri:oozie:coordinator:0.2}',
+                '{uri:oozie:coordinator:0.1}',
+                ''
+            ]
+            
+            for ns in namespaces:
+                name_elem = root.find(f'{ns}name')
+                if name_elem is not None and name_elem.text:
+                    return name_elem.text.strip()
+            
+            # Fallback to filename
+            return coordinator_file.stem
+            
+        except Exception as e:
+            print(f"⚠️ Error parsing coordinator {coordinator_file}: {e}")
+            return coordinator_file.stem
+    
+    def calculate_similarity(self, adf_name, hadoop_name):
+        """Calculate similarity between ADF and Hadoop pipeline names"""
+        # Clean names for comparison
+        adf_clean = adf_name.lower().replace('pl_', '').replace('pl ', '').replace('_', ' ')
+        hadoop_clean = hadoop_name.lower().replace('_', ' ').replace('-', ' ')
+        
+        # Calculate similarity
+        similarity = SequenceMatcher(None, adf_clean, hadoop_clean).ratio()
+        
+        # Boost similarity for keyword matches
+        adf_keywords = set(adf_clean.split())
+        hadoop_keywords = set(hadoop_clean.split())
+        
+        keyword_overlap = len(adf_keywords.intersection(hadoop_keywords))
+        if keyword_overlap > 0:
+            similarity += keyword_overlap * 0.1
+        
+        return min(similarity, 1.0)
+    
+    def map_adf_to_hadoop(self):
+        """Map ADF pipelines to Hadoop workflows/coordinators"""
+        print(f"\n🔗 Mapping {len(self.adf_pipelines)} ADF pipelines to Hadoop workflows...")
+        
+        mappings = []
+        
+        for adf_pipeline in self.adf_pipelines:
+            adf_name = adf_pipeline['pipeline_name']
+            adf_category = adf_pipeline['category']
+            
+            best_match = None
+            best_score = 0
+            match_type = None
+            
+            # Repository mapping based on category
+            repo_mapping = {
+                "dataingestion": "app-data-ingestion",
+                "cdd": "app-cdd", 
+                "gmrn": "app-globalmrn",
+                "leaddiscovery": "app-lead-discovery",
+                "leadrepository": "app-lead-repository",
+                "leadservicebase": "app-lead-service-base",
+                "ops hints": "app-ops-hints",
+                "coverage helpers": "app-coverage-helpers",
+                "audit": "app-data-ingestion",
+                "maintainance": "app-data-ingestion",
+                "hintsdiscovery": "app-ops-hints",
+                "hfc": "app-lead-repository",
+                "chc": "app-data-ingestion",
+                "blacklisted": "app-data-ingestion",
+                "copy": "app-data-ingestion",
+                "test": "app-data-ingestion",
+                "mh (lead repository)": "app-lead-repository",
+                "chc (lead repository)": "app-lead-repository"
+            }
+            
+            expected_repo = repo_mapping.get(adf_category.lower(), None)
+            
+            # If no exact match, try fuzzy matching
+            if not expected_repo:
+                for mapped_category, repo in repo_mapping.items():
+                    if adf_category.lower() in mapped_category or mapped_category in adf_category.lower():
+                        expected_repo = repo
+                        break
+            
+            # If still no match, try to infer from pipeline name
+            if not expected_repo:
+                pipeline_lower = adf_name.lower()
+                if 'dataingestion' in pipeline_lower or 'ingest' in pipeline_lower:
+                    expected_repo = 'app-data-ingestion'
+                elif 'cdd' in pipeline_lower:
+                    expected_repo = 'app-cdd'
+                elif 'gmrn' in pipeline_lower or 'globalmrn' in pipeline_lower:
+                    expected_repo = 'app-globalmrn'
+                elif 'lead' in pipeline_lower and 'discovery' in pipeline_lower:
+                    expected_repo = 'app-lead-discovery'
+                elif 'lead' in pipeline_lower and 'repository' in pipeline_lower:
+                    expected_repo = 'app-lead-repository'
+                elif 'lead' in pipeline_lower and 'service' in pipeline_lower:
+                    expected_repo = 'app-lead-service-base'
+                elif 'coverage' in pipeline_lower or 'helper' in pipeline_lower:
+                    expected_repo = 'app-coverage-helpers'
+                elif 'hints' in pipeline_lower or 'ops' in pipeline_lower:
+                    expected_repo = 'app-ops-hints'
+            
+            # Search for matches in workflows
+            for workflow in self.hadoop_workflows:
+                if expected_repo and workflow['repo_name'] != expected_repo:
+                    continue
+                
+                score = self.calculate_similarity(adf_name, workflow['workflow_name'])
+                if score > best_score:
+                    best_score = score
+                    best_match = workflow
+                    match_type = 'Workflow'
+            
+            # Search for matches in coordinators
+            for coordinator in self.hadoop_coordinators:
+                if expected_repo and coordinator['repo_name'] != expected_repo:
+                    continue
+                
+                score = self.calculate_similarity(adf_name, coordinator['coordinator_name'])
+                if score > best_score:
+                    best_score = score
+                    best_match = coordinator
+                    match_type = 'Coordinator'
+            
+            # Determine mapping status
+            mapping_found = "Yes" if best_score >= 0.4 else "No"
+            
+            if best_match:
+                mappings.append({
+                    'adf_category': adf_category,
+                    'adf_pipeline_name': adf_name,
+                    'expected_repo': expected_repo or 'Unknown',
+                    'mapped_repo': best_match['repo_name'],
+                    'mapped_name': best_match.get('workflow_name', best_match.get('coordinator_name')),
+                    'mapped_type': match_type,
+                    'similarity_score': best_score,
+                    'mapping_found': mapping_found,
+                    'relative_path': best_match['relative_path']
+                })
+            else:
+                mappings.append({
+                    'adf_category': adf_category,
+                    'adf_pipeline_name': adf_name,
+                    'expected_repo': expected_repo or 'Unknown',
+                    'mapped_repo': 'N/A',
+                    'mapped_name': 'N/A',
+                    'mapped_type': 'N/A',
+                    'similarity_score': 0.0,
+                    'mapping_found': 'No',
+                    'relative_path': 'N/A'
+                })
+        
+        self.mappings = mappings
+        return mappings
+    
+    def create_excel_report(self, output_file):
+        """Create comprehensive Excel mapping report"""
+        wb = openpyxl.Workbook()
+        
+        # Remove default sheet
+        wb.remove(wb.active)
+        
+        # Create main mapping sheet
+        self.create_mapping_sheet(wb)
+        
+        # Create summary sheet
+        self.create_summary_sheet(wb)
+        
+        # Create Hadoop inventory sheet
+        self.create_hadoop_inventory_sheet(wb)
+        
+        # Save the workbook
+        wb.save(output_file)
+        print(f"📊 Excel report created: {output_file}")
+    
+    def create_mapping_sheet(self, wb):
+        """Create the main ADF to Hadoop mapping sheet"""
+        ws = wb.create_sheet("ADF_Hadoop_Mapping")
         
         # Add title
-        ws['A1'] = "Dynamic ADF to Hadoop Pipeline Mapping"
+        ws['A1'] = "ADF to Hadoop Pipeline Mapping Report"
         ws['A1'].font = Font(size=16, bold=True)
+        ws.merge_cells('A1:J1')
         
+        # Headers
         headers = [
-            "Category", "ADF Pipeline Name", "Hadoop Repository", 
-            "Mapped Oozie Workflow", "Mapped Oozie Coordinator", 
-            "Mapping Status", "Confidence Level", "Notes"
+            "ADF Category", "ADF Pipeline Name", "Expected Hadoop Repo", 
+            "Mapped Hadoop Repo", "Mapped Name", "Type (Workflow/Coordinator)",
+            "Similarity Score", "Mapping Found", "Relative Path", "Notes"
         ]
+        
+        ws.append([])  # Empty row
         ws.append(headers)
         
-        # Create mapping for each ADF pipeline
-        mapped_count = 0
-        unmapped_count = 0
+        # Style headers
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=3, column=col)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="CCCCCC", end_color="CCCCCC", fill_type="solid")
         
-        for adf_pipeline in adf_pipelines:
-            mapping_result = self.find_dynamic_matching_hadoop_pipeline(
-                adf_pipeline["pipeline_name"], 
-                adf_pipeline["category"]
-            )
-            
-            # Count mapped vs unmapped
-            if "✅" in mapping_result['status'] or "🔍" in mapping_result['status']:
-                mapped_count += 1
+        # Add mapping data
+        for mapping in self.mappings:
+            notes = ""
+            if mapping['mapping_found'] == 'Yes':
+                if mapping['similarity_score'] >= 0.7:
+                    notes = "Strong match"
+                elif mapping['similarity_score'] >= 0.5:
+                    notes = "Good match"
+                else:
+                    notes = "Weak match"
             else:
-                unmapped_count += 1
+                notes = "No suitable match found"
             
             row = [
-                adf_pipeline["category"],
-                adf_pipeline["pipeline_name"],
-                mapping_result["hadoop_repo"],
-                mapping_result["workflow"],
-                mapping_result["coordinator"],
-                mapping_result["status"],
-                mapping_result["confidence"],
-                mapping_result["notes"]
+                mapping['adf_category'],
+                mapping['adf_pipeline_name'],
+                mapping['expected_repo'],
+                mapping['mapped_repo'],
+                mapping['mapped_name'],
+                mapping['mapped_type'],
+                f"{mapping['similarity_score']:.2f}",
+                mapping['mapping_found'],
+                mapping['relative_path'],
+                notes
             ]
             ws.append(row)
         
-        # Add summary section
+        # Style the data rows
+        for row_num in range(4, ws.max_row + 1):
+            mapping_found_cell = ws.cell(row=row_num, column=8)
+            if mapping_found_cell.value == "Yes":
+                mapping_found_cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
+            else:
+                mapping_found_cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
+        
+        # Auto-adjust column widths
+        for column in ws.columns:
+            max_length = 0
+            column_letter = None
+            for cell in column:
+                try:
+                    if hasattr(cell, 'column_letter'):
+                        column_letter = cell.column_letter
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            if column_letter:
+                adjusted_width = min(max_length + 2, 50)
+                ws.column_dimensions[column_letter].width = adjusted_width
+    
+    def create_summary_sheet(self, wb):
+        """Create summary statistics sheet"""
+        ws = wb.create_sheet("Mapping_Summary")
+        
+        # Add title
+        ws['A1'] = "ADF to Hadoop Mapping Summary"
+        ws['A1'].font = Font(size=16, bold=True)
+        
+        # Calculate statistics
+        total_pipelines = len(self.mappings)
+        mapped_pipelines = len([m for m in self.mappings if m['mapping_found'] == 'Yes'])
+        unmapped_pipelines = total_pipelines - mapped_pipelines
+        success_rate = (mapped_pipelines / total_pipelines * 100) if total_pipelines > 0 else 0
+        
+        # Add summary data
         ws.append([])
-        ws.append(["MAPPING SUMMARY:"])
-        ws.append([f"Total ADF Pipelines: {len(adf_pipelines)}"])
-        ws.append([f"Successfully Mapped: {mapped_count}"])
-        ws.append([f"Not Mapped: {unmapped_count}"])
-        ws.append([f"Mapping Success Rate: {(mapped_count/len(adf_pipelines)*100):.1f}%"])
+        ws.append(["SUMMARY STATISTICS"])
+        ws.append([f"Total ADF Pipelines: {total_pipelines}"])
+        ws.append([f"Successfully Mapped: {mapped_pipelines}"])
+        ws.append([f"Not Mapped: {unmapped_pipelines}"])
+        ws.append([f"Mapping Success Rate: {success_rate:.1f}%"])
         
         # Add repository breakdown
         ws.append([])
-        ws.append(["HADOOP REPOSITORY BREAKDOWN:"])
+        ws.append(["REPOSITORY BREAKDOWN"])
         repo_counts = {}
-        for adf_pipeline in adf_pipelines:
-            mapping_result = self.find_dynamic_matching_hadoop_pipeline(
-                adf_pipeline["pipeline_name"], 
-                adf_pipeline["category"]
-            )
-            repo = mapping_result["hadoop_repo"]
+        for mapping in self.mappings:
+            repo = mapping['expected_repo']
             repo_counts[repo] = repo_counts.get(repo, 0) + 1
         
         for repo, count in sorted(repo_counts.items()):
             ws.append([f"{repo}: {count} ADF pipelines"])
         
-        self.format_sheet(ws)
+        # Add category breakdown
+        ws.append([])
+        ws.append(["CATEGORY BREAKDOWN"])
+        category_counts = {}
+        for mapping in self.mappings:
+            category = mapping['adf_category']
+            category_counts[category] = category_counts.get(category, 0) + 1
+        
+        for category, count in sorted(category_counts.items()):
+            ws.append([f"{category}: {count} ADF pipelines"])
     
-    def find_dynamic_matching_hadoop_pipeline(self, adf_pipeline_name, category):
-        """Find matching Hadoop pipeline using dynamic logic"""
-        # Repository mapping based on category
-        repo_mapping = {
-            "dataingestion": "app-data-ingestion",
-            "cdd": "app-cdd", 
-            "gmrn": "app-globalmrn",
-            "leaddiscovery": "app-lead-discovery",
-            "leadrepository": "app-lead-repository",
-            "leadservicebase": "app-lead-service-base",
-            "ops hints": "app-ops-hints",
-            "coverage helpers": "app-coverage-helpers",
-            "audit": "app-data-ingestion",
-            "maintainance": "app-data-ingestion",
-            "hintsdiscovery": "app-ops-hints",
-            "hfc": "app-lead-repository",
-            "chc": "app-data-ingestion",
-            "blacklisted": "app-data-ingestion",
-            "copy": "app-data-ingestion",
-            "test": "app-data-ingestion",
-            "mh (lead repository)": "app-lead-repository",
-            "chc (lead repository)": "app-lead-repository"
-        }
-        
-        expected_repo = repo_mapping.get(category.lower(), "Unknown")
-        
-        # If no exact match, try fuzzy matching
-        if expected_repo == "Unknown":
-            for mapped_category, repo in repo_mapping.items():
-                if category.lower() in mapped_category or mapped_category in category.lower():
-                    expected_repo = repo
-                    break
-        
-        # If still no match, try to infer from pipeline name
-        if expected_repo == "Unknown":
-            pipeline_lower = adf_pipeline_name.lower()
-            if 'dataingestion' in pipeline_lower or 'ingest' in pipeline_lower:
-                expected_repo = 'app-data-ingestion'
-            elif 'cdd' in pipeline_lower:
-                expected_repo = 'app-cdd'
-            elif 'gmrn' in pipeline_lower or 'globalmrn' in pipeline_lower:
-                expected_repo = 'app-globalmrn'
-            elif 'lead' in pipeline_lower and 'discovery' in pipeline_lower:
-                expected_repo = 'app-lead-discovery'
-            elif 'lead' in pipeline_lower and 'repository' in pipeline_lower:
-                expected_repo = 'app-lead-repository'
-            elif 'lead' in pipeline_lower and 'service' in pipeline_lower:
-                expected_repo = 'app-lead-service-base'
-            elif 'coverage' in pipeline_lower or 'helper' in pipeline_lower:
-                expected_repo = 'app-coverage-helpers'
-            elif 'hints' in pipeline_lower or 'ops' in pipeline_lower:
-                expected_repo = 'app-ops-hints'
-        
-        # Check if we have this repository analyzed
-        if expected_repo not in self.repo_summary:
-            return {
-                "hadoop_repo": expected_repo,
-                "workflow": "N/A",
-                "coordinator": "N/A",
-                "status": "❌ REPO NOT ANALYZED",
-                "confidence": "N/A",
-                "notes": f"Repository {expected_repo} not found in current analysis"
-            }
-        
-        # Look for similar pipelines in the analyzed pipelines
-        found_workflows = [p for p in self.all_pipelines if p['repo_name'] == expected_repo and p['pipeline_type'] == 'Workflow']
-        found_coordinators = [p for p in self.all_pipelines if p['repo_name'] == expected_repo and p['pipeline_type'] == 'Coordinator']
-        
-        if not found_workflows and not found_coordinators:
-            return {
-                "hadoop_repo": expected_repo,
-                "workflow": "N/A",
-                "coordinator": "N/A",
-                "status": "❌ NO PIPELINES FOUND",
-                "confidence": "N/A", 
-                "notes": f"No workflows or coordinators found in {expected_repo}"
-            }
-        
-        # Extract keywords from ADF pipeline name
-        pipeline_keywords = adf_pipeline_name.lower().replace("pl_", "").replace("pl ", "").split("_")
-        pipeline_keywords = [kw for kw in pipeline_keywords if len(kw) > 2]  # Filter short keywords
-        
-        best_match_score = 0
-        best_match = None
-        
-        # Check workflows
-        for workflow in found_workflows:
-            workflow_name = workflow['pipeline_name'].lower()
-            matches = sum(1 for keyword in pipeline_keywords if keyword in workflow_name)
-            score = matches / len(pipeline_keywords) if pipeline_keywords else 0
-            
-            if score > best_match_score:
-                best_match_score = score
-                best_match = {
-                    "type": "workflow",
-                    "name": workflow['pipeline_name'],
-                    "score": score
-                }
-        
-        # Check coordinators
-        for coordinator in found_coordinators:
-            coordinator_name = coordinator['pipeline_name'].lower()
-            matches = sum(1 for keyword in pipeline_keywords if keyword in coordinator_name)
-            score = matches / len(pipeline_keywords) if pipeline_keywords else 0
-            
-            if score > best_match_score:
-                best_match_score = score
-                best_match = {
-                    "type": "coordinator", 
-                    "name": coordinator['pipeline_name'],
-                    "score": score
-                }
-        
-        # Determine confidence and status
-        if best_match_score >= 0.6:  # 60% keyword match
-            confidence = "High"
-            status = f"✅ {best_match['type'].upper()} FOUND"
-            notes = f"Strong match with {best_match_score:.1%} keyword similarity"
-        elif best_match_score >= 0.3:  # 30% keyword match
-            confidence = "Medium"
-            status = f"🔍 SIMILAR {best_match['type'].upper()} FOUND"
-            notes = f"Moderate match with {best_match_score:.1%} keyword similarity"
-        else:
-            confidence = "Low"
-            status = "❌ NO MATCH FOUND"
-            notes = f"No matching pipeline found. Available: {len(found_workflows)} workflows, {len(found_coordinators)} coordinators"
-            best_match = None
-        
-        return {
-            "hadoop_repo": expected_repo,
-            "workflow": best_match['name'] if best_match and best_match['type'] == 'workflow' else ("N/A" if not best_match or best_match['type'] != 'workflow' else best_match['name']),
-            "coordinator": best_match['name'] if best_match and best_match['type'] == 'coordinator' else ("N/A" if not best_match or best_match['type'] != 'coordinator' else best_match['name']),
-            "status": status,
-            "confidence": confidence,
-            "notes": notes
-        }
-    
-    def create_adf_mapping_template(self, wb):
-        """Create ADF Pipeline Mapping Template sheet"""
-        ws = wb.create_sheet("ADF_Mapping_Template")
+    def create_hadoop_inventory_sheet(self, wb):
+        """Create Hadoop workflows/coordinators inventory sheet"""
+        ws = wb.create_sheet("Hadoop_Inventory")
         
         # Add title
-        ws['A1'] = "ADF Pipeline Mapping Template"
+        ws['A1'] = "Hadoop Workflows and Coordinators Inventory"
         ws['A1'].font = Font(size=16, bold=True)
         
-        headers = [
-            "Category", "ADF Pipeline Name", "Hadoop Repository", 
-            "Mapped Oozie Workflow", "Mapped Oozie Coordinator", 
-            "Mapping Status", "Confidence Level", "Notes"
-        ]
-        ws.append(headers)
-        
-        # Add instructions
+        # Add workflows
         ws.append([])
-        ws.append(["INSTRUCTIONS:"])
-        ws.append(["1. Add your complete ADF pipeline list in Column B"])
-        ws.append(["2. Add categories in Column A"])
-        ws.append(["3. The script will auto-populate Hadoop mappings"])
+        ws.append(["WORKFLOWS"])
+        ws.append(["Repository", "Workflow Name", "Relative Path"])
+        
+        for workflow in self.hadoop_workflows:
+            ws.append([
+                workflow['repo_name'],
+                workflow['workflow_name'],
+                workflow['relative_path']
+            ])
+        
+        # Add coordinators
         ws.append([])
+        ws.append(["COORDINATORS"])
+        ws.append(["Repository", "Coordinator Name", "Relative Path"])
         
-        # Add sample entries based on what we know
-        sample_pipelines = [
-            ["dataingestion", "pl_dataingestion_big_tables", "app-data-ingestion", "big_tables_workflow.xml", "N/A", "✅ FOUND", "High", "Direct match"],
-            ["dataingestion", "pl_dataingestion_fnf", "app-data-ingestion", "sqoop_fnf_workflow.xml", "N/A", "✅ FOUND", "High", "Direct match"],
-            ["cdd", "pl_cdd_es_prebdf", "app-cdd", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"],
-            ["gmrn", "pl_gmrn_ghic", "app-globalmrn", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"],
-            ["leaddiscovery", "pl_leaddiscovery_globalmrn_assign", "app-lead-discovery", "N/A", "N/A", "❌ REPO NOT ANALYZED", "N/A", "Repository not analyzed"]
-        ]
+        for coordinator in self.hadoop_coordinators:
+            ws.append([
+                coordinator['repo_name'],
+                coordinator['coordinator_name'],
+                coordinator['relative_path']
+            ])
         
-        for pipeline in sample_pipelines:
-            ws.append(pipeline)
-        
+        # Add totals
         ws.append([])
-        ws.append(["TOTAL COUNTS FROM CURRENT ANALYSIS:"])
-        total_workflows = sum(1 for p in self.all_pipelines if p['pipeline_type'] == 'Workflow')
-        total_coordinators = sum(1 for p in self.all_pipelines if p['pipeline_type'] == 'Coordinator')
-        total_pipelines = total_workflows + total_coordinators
-        
-        ws.append([f"Total Oozie Workflows: {total_workflows}"])
-        ws.append([f"Total Oozie Coordinators: {total_coordinators}"])
-        ws.append([f"Total Oozie Pipelines: {total_pipelines}"])
-        
-        self.format_sheet(ws)
-    
-    def format_sheet(self, ws):
-        """Format Excel sheet with basic styling"""
-        try:
-            # Set column widths
-            for col_idx in range(1, ws.max_column + 1):
-                try:
-                    column_letter = ws.cell(row=1, column=col_idx).column_letter
-                    ws.column_dimensions[column_letter].width = 20
-                except:
-                    pass
-        except Exception as e:
-            print(f"    ⚠️ Warning: Could not format sheet: {e}")
+        ws.append(["TOTALS"])
+        ws.append([f"Total Workflows: {len(self.hadoop_workflows)}"])
+        ws.append([f"Total Coordinators: {len(self.hadoop_coordinators)}"])
+        ws.append([f"Total Hadoop Pipelines: {len(self.hadoop_workflows) + len(self.hadoop_coordinators)}"])
 
 def main():
-    """Main function to run the Hadoop Pipeline Consolidator"""
-    import sys
-    
     print("=" * 80)
-    print("🚀 HADOOP PIPELINE CONSOLIDATOR")
+    print("🚀 ADF TO HADOOP PIPELINE MAPPER")
     print("=" * 80)
-    print("Analyzes all Hadoop repositories and creates a consolidated pipeline report")
+    print("Maps ADF pipelines to Hadoop workflows/coordinators based on name similarity")
     print()
     
-    # Get base path and ADF Excel file from command line arguments or prompt
+    # Get input parameters
     if len(sys.argv) > 2:
         base_path = sys.argv[1]
         adf_excel_file = sys.argv[2]
@@ -1136,91 +527,64 @@ def main():
         base_path = input("Enter the path containing all Hadoop repositories: ").strip()
         adf_excel_file = input("Enter the path to ADF pipeline Excel file: ").strip()
     
-    if not base_path:
-        print("Error: Repository path is required!")
-        print("Usage: python hadoop_pipeline_consolidator.py <path_to_repositories> <adf_excel_file>")
-        print("Example: python hadoop_pipeline_consolidator.py OneDrive_1_7-25-2025/Hadoop adf_pipelines.xlsx")
+    # Initialize mapper
+    mapper = ADFHadoopMapper()
+    
+    # Read ADF pipelines
+    print(f"\n📋 Reading ADF pipelines from: {adf_excel_file}")
+    adf_pipelines = mapper.read_adf_pipelines_from_excel(adf_excel_file)
+    if not adf_pipelines:
+        print("❌ No ADF pipelines found. Exiting.")
         return
     
-    if not adf_excel_file:
-        print("Error: ADF Excel file path is required!")
-        print("Usage: python hadoop_pipeline_consolidator.py <path_to_repositories> <adf_excel_file>")
-        return
+    mapper.adf_pipelines = adf_pipelines
     
-    if not os.path.exists(base_path):
-        print(f"Error: Repository path does not exist: {base_path}")
-        return
-    
-    if not os.path.exists(adf_excel_file):
-        print(f"Error: ADF Excel file does not exist: {adf_excel_file}")
-        return
-    
-    # Initialize consolidator
-    consolidator = HadoopPipelineConsolidator()
-    
-    # Find all Hadoop repositories
+    # Find Hadoop repositories
     print(f"\n🔍 Scanning for Hadoop repositories in: {base_path}")
-    hadoop_repos = consolidator.find_all_hadoop_repos(base_path)
-    
+    hadoop_repos = mapper.find_hadoop_repositories(base_path)
     if not hadoop_repos:
-        print("❌ No Hadoop repositories found!")
+        print("❌ No Hadoop repositories found. Exiting.")
         return
     
-    print(f"✅ Found {len(hadoop_repos)} Hadoop repositories:")
-    for repo in hadoop_repos:
-        print(f"  - {repo.name}")
-    
-    # Analyze each repository
-    print(f"\n📊 Analyzing all repositories...")
-    total_stats = {
-        'repositories': len(hadoop_repos),
-        'pipelines': 0,
-        'actions': 0,
-        'technologies': 0
-    }
+    # Scan all repositories
+    print(f"\n📊 Scanning all Hadoop repositories...")
+    all_workflows = []
+    all_coordinators = []
     
     for repo in hadoop_repos:
-        stats = consolidator.analyze_single_repository(repo)
-        total_stats['pipelines'] += stats['total_pipelines']
+        workflows, coordinators = mapper.scan_hadoop_repository(repo)
+        all_workflows.extend(workflows)
+        all_coordinators.extend(coordinators)
     
-    total_stats['actions'] = sum(len(p['actions']) for p in consolidator.all_pipelines)
-    total_stats['technologies'] = len(consolidator.technology_counts)
+    mapper.hadoop_workflows = all_workflows
+    mapper.hadoop_coordinators = all_coordinators
     
-    # Read ADF pipelines from Excel
-    adf_pipelines = consolidator.read_adf_pipelines_from_excel(adf_excel_file)
+    print(f"\n📄 Total Hadoop pipelines found:")
+    print(f"  - Workflows: {len(all_workflows)}")
+    print(f"  - Coordinators: {len(all_coordinators)}")
+    print(f"  - Total: {len(all_workflows) + len(all_coordinators)}")
     
-    # Generate consolidated Excel report
-    output_file = "HADOOP_PIPELINE_CONSOLIDATED_REPORT.xlsx"
-    consolidator.create_consolidated_excel(output_file, adf_pipelines)
+    # Perform mapping
+    mappings = mapper.map_adf_to_hadoop()
+    
+    # Create Excel report
+    output_file = "ADF_HADOOP_MAPPING_REPORT.xlsx"
+    mapper.create_excel_report(output_file)
     
     # Print summary
-    print(f"\n{'='*80}")
-    print("🎯 ANALYSIS SUMMARY")
-    print(f"{'='*80}")
-    print(f"📁 Repositories Analyzed: {total_stats['repositories']}")
-    print(f"🔄 Total Pipelines: {total_stats['pipelines']}")
-    print(f"⚙️ Total Actions: {total_stats['actions']}")
-    print(f"🛠️ Technologies Found: {total_stats['technologies']}")
+    total_pipelines = len(mappings)
+    mapped_pipelines = len([m for m in mappings if m['mapping_found'] == 'Yes'])
+    success_rate = (mapped_pipelines / total_pipelines * 100) if total_pipelines > 0 else 0
     
-    print(f"\n📊 Technology Breakdown:")
-    for tech, count in consolidator.technology_counts.most_common():
-        print(f"  {tech}: {count}")
-    
-    # Calculate totals
-    total_workflows = sum(1 for p in consolidator.all_pipelines if 'workflow' in p['pipeline_name'].lower())
-    total_coordinators = sum(1 for p in consolidator.all_pipelines if 'coordinator' in p['pipeline_name'].lower())
-    total_pipelines = total_workflows + total_coordinators
-    
-    print(f"\n🎯 PIPELINE COUNTS SUMMARY:")
-    print(f"  📋 Total Oozie Workflows: {total_workflows}")
-    print(f"  ⏰ Total Oozie Coordinators/Triggers: {total_coordinators}")
-    print(f"  🔄 Total Oozie Pipelines: {total_pipelines}")
-    
-    print(f"\n📄 Repository Breakdown:")
-    for repo_name, count in consolidator.pipeline_counts.items():
-        print(f"  {repo_name}: {count} pipelines")
-    
-    print(f"\n🎉 Analysis complete! Check the Excel file: {output_file}")
+    print("\n" + "=" * 80)
+    print("🎯 MAPPING SUMMARY")
+    print("=" * 80)
+    print(f"📋 Total ADF Pipelines: {total_pipelines}")
+    print(f"✅ Successfully Mapped: {mapped_pipelines}")
+    print(f"❌ Not Mapped: {total_pipelines - mapped_pipelines}")
+    print(f"📊 Mapping Success Rate: {success_rate:.1f}%")
+    print(f"\n📄 Report saved as: {output_file}")
+    print("=" * 80)
 
 if __name__ == "__main__":
     main()
