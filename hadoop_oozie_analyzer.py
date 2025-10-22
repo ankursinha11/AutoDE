@@ -1,851 +1,369 @@
 #!/usr/bin/env python3
 """
-Hadoop Oozie Workflow Analyzer
-==============================
-
-This script analyzes Hadoop repositories focusing on Oozie workflows to understand:
-- Which Oozie workflows run first, second, etc.
-- What scripts each workflow uses and in which order
-- Source and target tables for each script
-- Used vs unused scripts
-- Complete pipeline flow
-
-Output: Comprehensive Excel report with multiple sheets
+Hadoop Repository Structure Analyzer
+Analyzes multiple Hadoop repositories and categorizes Oozie workflows vs coordinators
+Handles different repository structures (oozie/, workflows/, coordinators/)
 """
 
 import os
-import re
-import json
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Dict, List, Set, Tuple, Optional, Any
-from dataclasses import dataclass, asdict
-from datetime import datetime
 import pandas as pd
+from collections import defaultdict
+import re
 
-@dataclass
-class OozieWorkflow:
-    """Represents an Oozie workflow"""
-    name: str
-    file_path: str
-    execution_order: int
-    frequency: str
-    total_actions: int
-    actions: List[Dict[str, Any]]
-    technologies: Dict[str, int]
-    input_tables: List[str]
-    output_tables: List[str]
-
-@dataclass
-class ScriptInfo:
-    """Represents a script with detailed information"""
-    name: str
-    path: str
-    technology: str
-    is_used: bool
-    used_in_workflows: List[str]
-    execution_order: int
-    input_tables: List[str]
-    output_tables: List[str]
-    business_logic: str
-    dependencies: List[str]
-
-@dataclass
-class PipelineFlow:
-    """Represents the complete pipeline flow"""
-    workflow_name: str
-    step_number: int
-    action_name: str
-    script_name: str
-    technology: str
-    input_tables: str
-    output_tables: str
-    business_purpose: str
-
-class HadoopOozieAnalyzer:
-    """Analyzes Hadoop Oozie workflows and scripts"""
-    
-    def __init__(self, hadoop_repo_path: str):
-        self.hadoop_repo_path = Path(hadoop_repo_path)
+class HadoopRepoStructureAnalyzer:
+    def __init__(self):
+        self.repos = []
         self.workflows = []
-        self.scripts = []
-        self.used_scripts = set()
-        self.unused_scripts = set()
+        self.coordinators = []
+        self.repo_summary = defaultdict(lambda: {'workflows': 0, 'coordinators': 0, 'total_pipelines': 0})
         
-    def analyze_hadoop_repository(self) -> Dict[str, Any]:
-        """Perform complete Hadoop repository analysis"""
-        print("🚀 Hadoop Oozie Workflow Analyzer")
-        print("=" * 60)
+    def find_repositories(self, base_path):
+        """Find all app-* repositories"""
+        base = Path(base_path)
+        if not base.exists():
+            print(f"❌ Base path does not exist: {base_path}")
+            return []
+            
+        repos = []
+        for item in base.iterdir():
+            if item.is_dir() and item.name.startswith('app-'):
+                repos.append(item)
+                print(f"📁 Found repository: {item.name}")
         
-        # Step 1: Find all Oozie workflows
-        print("🔍 Step 1: Finding Oozie workflows...")
-        oozie_workflows = self._find_oozie_workflows()
-        print(f"   Found {len(oozie_workflows)} Oozie workflow files")
-        
-        # Step 2: Analyze each workflow
-        print("🔍 Step 2: Analyzing workflow execution order...")
-        workflow_analyses = self._analyze_workflows(oozie_workflows)
-        
-        # Step 3: Find all scripts
-        print("🔍 Step 3: Finding all scripts...")
-        all_scripts = self._find_all_scripts()
-        print(f"   Found {len(all_scripts)} script files")
-        
-        # Step 4: Identify used vs unused scripts
-        print("🔍 Step 4: Identifying used vs unused scripts...")
-        used_scripts, unused_scripts = self._identify_used_scripts(all_scripts, workflow_analyses)
-        
-        # Step 5: Analyze script details
-        print("🔍 Step 5: Analyzing script details...")
-        script_analyses = self._analyze_script_details(used_scripts, workflow_analyses)
-        
-        # Step 6: Create pipeline flow
-        print("🔍 Step 6: Creating pipeline flow...")
-        pipeline_flow = self._create_pipeline_flow(workflow_analyses)
-        
-        return {
-            'workflows': workflow_analyses,
-            'scripts': script_analyses,
-            'used_scripts': used_scripts,
-            'unused_scripts': unused_scripts,
-            'pipeline_flow': pipeline_flow,
-            'summary': self._create_summary(workflow_analyses, script_analyses, used_scripts, unused_scripts)
-        }
+        return repos
     
-    def _find_oozie_workflows(self) -> List[Path]:
-        """Find all Oozie workflow files"""
-        # Look for XML files in coordinators and workflows directories
-        patterns = [
-            "**/coordinators/*.xml",
-            "**/workflows/**/*.xml"
+    def find_oozie_files(self, repo_path):
+        """Find all Oozie workflow and coordinator files in a repository"""
+        repo_name = repo_path.name
+        workflows = []
+        coordinators = []
+        
+        print(f"\n🔍 Analyzing repository: {repo_name}")
+        
+        # Pattern 1: Files in oozie/ subdirectories
+        oozie_patterns = [
+            "**/oozie/**/workflow.xml",
+            "**/oozie/**/*workflow*.xml",
+            "**/oozie/**/coordinator.xml",
+            "**/workflows/**/workflow.xml",
+            "**/workflows/**/*workflow*.xml",
+            "**/workflows/**/coordinator.xml",
+            "**/coordinators/**/coordinator.xml",
+            "**/coordinators/**/workflow.xml"
         ]
         
-        workflow_files = []
-        for pattern in patterns:
-            files = list(self.hadoop_repo_path.glob(pattern))
-            workflow_files.extend(files)
+        for pattern in oozie_patterns:
+            for file_path in repo_path.rglob(pattern):
+                if file_path.is_file():
+                    file_type = self.determine_file_type(file_path)
+                    if file_type == 'workflow':
+                        workflows.append({
+                            'repo': repo_name,
+                            'file_path': str(file_path),
+                            'relative_path': str(file_path.relative_to(repo_path)),
+                            'type': 'workflow',
+                            'location': self.get_location_type(file_path)
+                        })
+                    elif file_type == 'coordinator':
+                        coordinators.append({
+                            'repo': repo_name,
+                            'file_path': str(file_path),
+                            'relative_path': str(file_path.relative_to(repo_path)),
+                            'type': 'coordinator',
+                            'location': self.get_location_type(file_path)
+                        })
         
-        return workflow_files
+        # Pattern 2: Files with _coord suffix
+        coord_patterns = [
+            "**/*_coord.xml",
+            "**/*_coordinator.xml"
+        ]
+        
+        for pattern in coord_patterns:
+            for file_path in repo_path.rglob(pattern):
+                if file_path.is_file() and self.is_coordinator_file(file_path):
+                    coordinators.append({
+                        'repo': repo_name,
+                        'file_path': str(file_path),
+                        'relative_path': str(file_path.relative_to(repo_path)),
+                        'type': 'coordinator',
+                        'location': 'coordinator_suffix'
+                    })
+        
+        print(f"  📊 Found {len(workflows)} workflows, {len(coordinators)} coordinators")
+        
+        return workflows, coordinators
     
-    def _analyze_workflows(self, oozie_workflows: List[Path]) -> List[OozieWorkflow]:
-        """Analyze all Oozie workflows"""
-        workflow_analyses = []
-        
-        for i, workflow_file in enumerate(oozie_workflows):
-            try:
-                analysis = self._analyze_single_workflow(workflow_file, i + 1)
-                if analysis:
-                    workflow_analyses.append(analysis)
-                    print(f"   ✅ Analyzed: {analysis.name}")
-            except Exception as e:
-                print(f"   ❌ Error analyzing {workflow_file}: {e}")
-        
-        return workflow_analyses
-    
-    def _analyze_single_workflow(self, workflow_file: Path, execution_order: int) -> Optional[OozieWorkflow]:
-        """Analyze a single Oozie workflow"""
+    def determine_file_type(self, file_path):
+        """Determine if file is workflow or coordinator based on content"""
         try:
-            tree = ET.parse(workflow_file)
+            tree = ET.parse(file_path)
             root = tree.getroot()
             
-            workflow_name = root.get('name', workflow_file.stem)
+            # Check for workflow elements
+            if root.tag.endswith('workflow-app'):
+                return 'workflow'
+            elif root.tag.endswith('coordinator-app'):
+                return 'coordinator'
             
-            # Extract frequency if it's a coordinator
-            frequency = "Unknown"
-            if 'coordinator' in workflow_file.name.lower():
-                frequency = root.get('frequency', 'Unknown')
+            # Fallback: check for workflow/coordinator elements
+            if root.find('.//{uri:oozie:workflow:0.5}workflow-app') is not None:
+                return 'workflow'
+            elif root.find('.//{uri:oozie:coordinator:0.2}coordinator-app') is not None:
+                return 'coordinator'
+            elif root.find('.//{uri:oozie:workflow:0.2}workflow-app') is not None:
+                return 'workflow'
+            elif root.find('.//{uri:oozie:coordinator:0.1}coordinator-app') is not None:
+                return 'coordinator'
             
-            # Extract actions
-            actions = []
-            technologies = {}
-            input_tables = []
-            output_tables = []
-            
-            for action in root.findall('.//{uri:oozie:workflow:0.5}action'):
-                action_info = self._parse_action(action, workflow_file)
-                if action_info:
-                    actions.append(action_info)
-                    
-                    # Count technologies
-                    tech = action_info.get('technology', 'unknown')
-                    technologies[tech] = technologies.get(tech, 0) + 1
-                    
-                    # Collect input/output tables
-                    input_tables.extend(action_info.get('input_tables', []))
-                    output_tables.extend(action_info.get('output_tables', []))
-            
-            return OozieWorkflow(
-                name=workflow_name,
-                file_path=str(workflow_file),
-                execution_order=execution_order,
-                frequency=frequency,
-                total_actions=len(actions),
-                actions=actions,
-                technologies=technologies,
-                input_tables=list(set(input_tables)),
-                output_tables=list(set(output_tables))
-            )
-            
+            return 'unknown'
         except Exception as e:
-            print(f"   ⚠️ Error parsing {workflow_file}: {e}")
-            return None
-    
-    def _parse_action(self, action_elem, workflow_file: Path) -> Optional[Dict[str, Any]]:
-        """Parse an individual Oozie action"""
-        action_name = action_elem.get('name')
-        if not action_name:
-            return None
-        
-        # Determine action type and script
-        action_type = None
-        script_path = ""
-        technology = ""
-        
-        # Check for Spark actions
-        spark_elem = action_elem.find('.//{uri:oozie:spark-action:0.1}spark')
-        if spark_elem is not None:
-            action_type = "spark"
-            technology = "spark"
-            jar_elem = spark_elem.find('{uri:oozie:spark-action:0.1}jar')
-            if jar_elem is not None:
-                script_path = jar_elem.text or ""
-        
-        # Check for Pig actions
-        pig_elem = action_elem.find('.//{uri:oozie:pig-action:0.1}pig')
-        if pig_elem is not None:
-            action_type = "pig"
-            technology = "pig"
-            script_elem = pig_elem.find('{uri:oozie:pig-action:0.1}script')
-            if script_elem is not None:
-                script_path = script_elem.text or ""
-        
-        # Check for Hive actions
-        hive_elem = action_elem.find('.//{uri:oozie:hive-action:0.2}hive')
-        if hive_elem is not None:
-            action_type = "hive"
-            technology = "hive"
-            script_elem = hive_elem.find('{uri:oozie:hive-action:0.2}script')
-            if script_elem is not None:
-                script_path = script_elem.text or ""
-        
-        # Check for Shell actions
-        shell_elem = action_elem.find('.//{uri:oozie:shell-action:0.3}shell')
-        if shell_elem is not None:
-            action_type = "shell"
-            technology = "shell"
-            exec_elem = shell_elem.find('{uri:oozie:shell-action:0.3}exec')
-            if exec_elem is not None:
-                script_path = exec_elem.text or ""
-        
-        # Check for Email actions
-        email_elem = action_elem.find('.//{uri:oozie:email-action:0.2}email')
-        if email_elem is not None:
-            action_type = "email"
-            technology = "notification"
-            script_path = "email_notification"
-        
-        if not action_type:
-            return None
-        
-        # Extract input/output tables from script
-        input_tables, output_tables = self._analyze_script_tables(script_path, workflow_file)
-        
-        return {
-            'action_name': action_name,
-            'action_type': action_type,
-            'technology': technology,
-            'script_path': script_path,
-            'script_name': Path(script_path).name if script_path else 'N/A',
-            'input_tables': input_tables,
-            'output_tables': output_tables,
-            'business_purpose': self._infer_business_purpose(action_name, script_path)
-        }
-    
-    def _analyze_script_tables(self, script_path: str, workflow_file: Path) -> Tuple[List[str], List[str]]:
-        """Analyze script to extract input/output tables"""
-        input_tables = []
-        output_tables = []
-        
-        if not script_path or script_path == "email_notification":
-            return input_tables, output_tables
-        
-        # Try to find the actual script file
-        script_file = self._find_script_file(script_path, workflow_file)
-        if not script_file or not script_file.exists():
-            return input_tables, output_tables
-        
-        try:
-            content = script_file.read_text()
-            
-            # Extract table names based on technology
-            if script_file.suffix == '.py':  # Spark/PySpark
-                input_tables.extend(self._extract_spark_input_tables(content))
-                output_tables.extend(self._extract_spark_output_tables(content))
-            elif script_file.suffix == '.pig':  # Pig
-                input_tables.extend(self._extract_pig_input_tables(content))
-                output_tables.extend(self._extract_pig_output_tables(content))
-            elif script_file.suffix == '.sql':  # Hive
-                input_tables.extend(self._extract_hive_input_tables(content))
-                output_tables.extend(self._extract_hive_output_tables(content))
-            elif script_file.suffix == '.sh':  # Shell
-                input_tables.extend(self._extract_shell_input_tables(content))
-                output_tables.extend(self._extract_shell_output_tables(content))
-                
-        except Exception as e:
-            print(f"   ⚠️ Error reading script {script_file}: {e}")
-        
-        return input_tables, output_tables
-    
-    def _find_script_file(self, script_path: str, workflow_file: Path) -> Optional[Path]:
-        """Find the actual script file"""
-        # Clean up the path
-        clean_path = script_path.replace('${appPath}', '')
-        clean_path = clean_path.replace('${wf:actionData(\'get-datetime\')[\'date\']}', '*')
-        
-        # Try different search patterns
-        patterns = [
-            f"**/{clean_path}",
-            f"**/{Path(clean_path).name}",
-            f"**/*{Path(clean_path).stem}*"
-        ]
-        
-        for pattern in patterns:
-            matches = list(self.hadoop_repo_path.glob(pattern))
-            if matches:
-                return matches[0]
-        
-        return None
-    
-    def _extract_spark_input_tables(self, content: str) -> List[str]:
-        """Extract input tables from Spark/PySpark code"""
-        tables = []
-        
-        # Look for spark.read patterns
-        patterns = [
-            r'spark\.read\.parquet\(["\']([^"\']+)["\']',
-            r'spark\.read\.table\(["\']([^"\']+)["\']',
-            r'spark\.read\.format\(["\']([^"\']+)["\']',
-            r'\.read\.parquet\(["\']([^"\']+)["\']',
-            r'\.read\.table\(["\']([^"\']+)["\']'
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                table_name = self._extract_table_name_from_path(match)
-                if table_name:
-                    tables.append(table_name)
-        
-        return list(set(tables))
-    
-    def _extract_spark_output_tables(self, content: str) -> List[str]:
-        """Extract output tables from Spark/PySpark code"""
-        tables = []
-        
-        # Look for write patterns
-        patterns = [
-            r'\.write\.mode\(["\']([^"\']+)["\']\)\.parquet\(["\']([^"\']+)["\']',
-            r'\.write\.parquet\(["\']([^"\']+)["\']',
-            r'\.write\.mode\(["\']([^"\']+)["\']\)\.table\(["\']([^"\']+)["\']',
-            r'\.write\.table\(["\']([^"\']+)["\']'
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            for match in matches:
-                if isinstance(match, tuple):
-                    path = match[1] if len(match) > 1 else match[0]
-                else:
-                    path = match
-                table_name = self._extract_table_name_from_path(path)
-                if table_name:
-                    tables.append(table_name)
-        
-        return list(set(tables))
-    
-    def _extract_pig_input_tables(self, content: str) -> List[str]:
-        """Extract input tables from Pig code"""
-        tables = []
-        
-        # Look for LOAD statements
-        pattern = r'LOAD\s+[\'"]([^\'"]+)[\'"]'
-        matches = re.findall(pattern, content, re.IGNORECASE)
-        for match in matches:
-            table_name = self._extract_table_name_from_path(match)
-            if table_name:
-                tables.append(table_name)
-        
-        return list(set(tables))
-    
-    def _extract_pig_output_tables(self, content: str) -> List[str]:
-        """Extract output tables from Pig code"""
-        tables = []
-        
-        # Look for STORE statements
-        pattern = r'STORE\s+\w+\s+INTO\s+[\'"]([^\'"]+)[\'"]'
-        matches = re.findall(pattern, content, re.IGNORECASE)
-        for match in matches:
-            table_name = self._extract_table_name_from_path(match)
-            if table_name:
-                tables.append(table_name)
-        
-        return list(set(tables))
-    
-    def _extract_hive_input_tables(self, content: str) -> List[str]:
-        """Extract input tables from Hive SQL"""
-        tables = []
-        
-        # Look for FROM clauses and JOINs
-        patterns = [
-            r'FROM\s+([a-zA-Z_][a-zA-Z0-9_]*)',
-            r'JOIN\s+([a-zA-Z_][a-zA-Z0-9_]*)',
-            r'LEFT\s+JOIN\s+([a-zA-Z_][a-zA-Z0-9_]*)',
-            r'RIGHT\s+JOIN\s+([a-zA-Z_][a-zA-Z0-9_]*)',
-            r'INNER\s+JOIN\s+([a-zA-Z_][a-zA-Z0-9_]*)'
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            tables.extend(matches)
-        
-        return list(set(tables))
-    
-    def _extract_hive_output_tables(self, content: str) -> List[str]:
-        """Extract output tables from Hive SQL"""
-        tables = []
-        
-        # Look for INSERT INTO and CREATE TABLE
-        patterns = [
-            r'INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)',
-            r'CREATE\s+TABLE\s+([a-zA-Z_][a-zA-Z0-9_]*)',
-            r'CREATE\s+EXTERNAL\s+TABLE\s+([a-zA-Z_][a-zA-Z0-9_]*)'
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, content, re.IGNORECASE)
-            tables.extend(matches)
-        
-        return list(set(tables))
-    
-    def _extract_shell_input_tables(self, content: str) -> List[str]:
-        """Extract input tables from Shell scripts"""
-        tables = []
-        
-        # Look for file paths that might be tables
-        patterns = [
-            r'/user/[^/]+/[^/]+/[^/]+/([^/\s]+)',
-            r'/data/[^/]+/[^/]+/([^/\s]+)',
-            r'hdfs://[^/]+/[^/]+/([^/\s]+)'
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, content)
-            tables.extend(matches)
-        
-        return list(set(tables))
-    
-    def _extract_shell_output_tables(self, content: str) -> List[str]:
-        """Extract output tables from Shell scripts"""
-        return self._extract_shell_input_tables(content)  # Same logic for shell scripts
-    
-    def _extract_table_name_from_path(self, path: str) -> Optional[str]:
-        """Extract table name from HDFS path"""
-        if not path:
-            return None
-        
-        # Remove common prefixes
-        path = path.replace('hdfs://', '').replace('file://', '')
-        
-        # Extract the last meaningful part
-        parts = path.split('/')
-        
-        # Look for table-like patterns
-        for part in reversed(parts):
-            if part and part not in ['current', 'data', 'publish', 'staging', 'input', 'output']:
-                # Clean up the table name
-                table_name = re.sub(r'[^a-zA-Z0-9_]', '', part)
-                if table_name:
-                    return table_name
-        
-        return None
-    
-    def _infer_business_purpose(self, action_name: str, script_path: str) -> str:
-        """Infer business purpose from action name and script path"""
-        action_lower = action_name.lower()
-        script_lower = script_path.lower()
-        
-        if 'parse' in action_lower or 'parse' in script_lower:
-            return "Data Parsing and Ingestion"
-        elif 'publish' in action_lower or 'publish' in script_lower:
-            return "Data Publishing"
-        elif 'notification' in action_lower or 'notification' in script_lower:
-            return "Notification and Alerting"
-        elif 'check' in action_lower or 'check' in script_lower:
-            return "Data Validation and Checking"
-        elif 'merge' in action_lower or 'merge' in script_lower:
-            return "Data Merging and Consolidation"
-        elif 'generate' in action_lower or 'generate' in script_lower:
-            return "Data Generation and Transformation"
-        elif 'download' in action_lower or 'download' in script_lower:
-            return "File Download and Processing"
-        elif 'upload' in action_lower or 'upload' in script_lower:
-            return "File Upload and Transfer"
-        elif 'log' in action_lower or 'log' in script_lower:
-            return "Logging and Monitoring"
-        else:
-            return "Data Processing"
-    
-    def _find_all_scripts(self) -> List[Path]:
-        """Find all script files in the repository"""
-        script_extensions = ['.py', '.pig', '.sql', '.sh', '.scala']
-        script_files = []
-        
-        for ext in script_extensions:
-            files = list(self.hadoop_repo_path.glob(f"**/*{ext}"))
-            script_files.extend(files)
-        
-        return script_files
-    
-    def _identify_used_scripts(self, all_scripts: List[Path], workflow_analyses: List[OozieWorkflow]) -> Tuple[Set[Path], Set[Path]]:
-        """Identify which scripts are used vs unused"""
-        used_scripts = set()
-        
-        # Extract script paths from workflow analyses
-        for workflow in workflow_analyses:
-            for action in workflow.actions:
-                script_path = action.get('script_path', '')
-                if script_path:
-                    # Try to find the actual script file
-                    script_file = self._find_script_file(script_path, Path(workflow.file_path))
-                    if script_file:
-                        used_scripts.add(script_file)
-        
-        # Find unused scripts
-        unused_scripts = set(all_scripts) - used_scripts
-        
-        return used_scripts, unused_scripts
-    
-    def _analyze_script_details(self, used_scripts: Set[Path], workflow_analyses: List[OozieWorkflow]) -> List[ScriptInfo]:
-        """Analyze details of used scripts"""
-        script_analyses = []
-        
-        for script_file in used_scripts:
-            try:
-                # Determine technology
-                technology = self._determine_technology(script_file)
-                
-                # Find which workflows use this script
-                used_in_workflows = []
-                execution_order = 999
-                
-                for workflow in workflow_analyses:
-                    for i, action in enumerate(workflow.actions):
-                        if script_file.name in action.get('script_path', ''):
-                            used_in_workflows.append(workflow.name)
-                            execution_order = min(execution_order, i + 1)
-                
-                # Extract business logic
-                business_logic = self._extract_business_logic(script_file)
-                
-                # Extract input/output tables
-                input_tables, output_tables = self._extract_table_mappings(script_file)
-                
-                script_info = ScriptInfo(
-                    name=script_file.name,
-                    path=str(script_file),
-                    technology=technology,
-                    is_used=True,
-                    used_in_workflows=used_in_workflows,
-                    execution_order=execution_order,
-                    input_tables=input_tables,
-                    output_tables=output_tables,
-                    business_logic=business_logic,
-                    dependencies=[]
-                )
-                
-                script_analyses.append(script_info)
-                
-            except Exception as e:
-                print(f"   ⚠️ Error analyzing {script_file}: {e}")
-        
-        return script_analyses
-    
-    def _determine_technology(self, script_file: Path) -> str:
-        """Determine technology based on file extension"""
-        ext = script_file.suffix.lower()
-        if ext == '.py':
-            return 'spark'
-        elif ext == '.pig':
-            return 'pig'
-        elif ext == '.sql':
-            return 'hive'
-        elif ext == '.sh':
-            return 'shell'
-        elif ext == '.scala':
-            return 'spark'
-        else:
+            print(f"    ⚠️  Error parsing {file_path}: {e}")
             return 'unknown'
     
-    def _extract_business_logic(self, script_file: Path) -> str:
-        """Extract business logic from script"""
+    def is_coordinator_file(self, file_path):
+        """Check if file with _coord suffix is actually a coordinator"""
         try:
-            content = script_file.read_text()
-            # Simple extraction - look for comments and function names
-            lines = content.split('\n')
-            logic_lines = []
-            
-            for line in lines[:50]:  # First 50 lines
-                line = line.strip()
-                if line.startswith('#') or line.startswith('--') or line.startswith('//'):
-                    logic_lines.append(line)
-                elif 'def ' in line or 'function' in line:
-                    logic_lines.append(line)
-            
-            return ' '.join(logic_lines[:5])  # First 5 logic lines
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+            return root.tag.endswith('coordinator-app') or 'coordinator' in root.tag.lower()
         except:
-            return f"Script: {script_file.name}"
+            return False
     
-    def _extract_table_mappings(self, script_file: Path) -> Tuple[List[str], List[str]]:
-        """Extract input/output table mappings from script"""
+    def get_location_type(self, file_path):
+        """Determine the location type of the file"""
+        path_str = str(file_path)
+        if '/oozie/' in path_str:
+            return 'oozie_folder'
+        elif '/workflows/' in path_str:
+            return 'workflows_folder'
+        elif '/coordinators/' in path_str:
+            return 'coordinators_folder'
+        else:
+            return 'other'
+    
+    def extract_pipeline_info(self, file_path):
+        """Extract pipeline name and other info from Oozie file"""
         try:
-            content = script_file.read_text()
-            input_tables = []
-            output_tables = []
+            tree = ET.parse(file_path)
+            root = tree.getroot()
             
-            # Look for table patterns
-            if script_file.suffix == '.py':
-                # Spark/PySpark patterns
-                input_patterns = [
-                    r'spark\.read\.parquet\(["\']([^"\']+)["\']',
-                    r'spark\.read\.table\(["\']([^"\']+)["\']',
-                    r'\.read\.parquet\(["\']([^"\']+)["\']'
-                ]
-                output_patterns = [
-                    r'\.write\.parquet\(["\']([^"\']+)["\']',
-                    r'\.write\.table\(["\']([^"\']+)["\']'
-                ]
-                
-                for pattern in input_patterns:
-                    matches = re.findall(pattern, content, re.IGNORECASE)
-                    for match in matches:
-                        table_name = self._extract_table_name_from_path(match)
-                        if table_name:
-                            input_tables.append(table_name)
-                
-                for pattern in output_patterns:
-                    matches = re.findall(pattern, content, re.IGNORECASE)
-                    for match in matches:
-                        table_name = self._extract_table_name_from_path(match)
-                        if table_name:
-                            output_tables.append(table_name)
+            # Get name attribute
+            name = root.get('name', 'Unknown')
             
-            return list(set(input_tables)), list(set(output_tables))
-        except:
-            return [], []
+            # Clean up name (remove variables)
+            name = re.sub(r'\$\{.*?\}', '', name).strip()
+            name = re.sub(r'\s+', ' ', name)
+            
+            return {
+                'name': name,
+                'file_type': 'workflow' if root.tag.endswith('workflow-app') else 'coordinator'
+            }
+        except Exception as e:
+            return {
+                'name': Path(file_path).stem,
+                'file_type': 'unknown'
+            }
     
-    def _create_pipeline_flow(self, workflow_analyses: List[OozieWorkflow]) -> List[PipelineFlow]:
-        """Create complete pipeline flow"""
-        pipeline_flow = []
+    def analyze_repositories(self, base_path):
+        """Main analysis function"""
+        print("🚀 Starting Hadoop Repository Structure Analysis")
+        print("=" * 60)
         
-        for workflow in workflow_analyses:
-            for i, action in enumerate(workflow.actions):
-                flow_item = PipelineFlow(
-                    workflow_name=workflow.name,
-                    step_number=i + 1,
-                    action_name=action.get('action_name', ''),
-                    script_name=action.get('script_name', ''),
-                    technology=action.get('technology', ''),
-                    input_tables=', '.join(action.get('input_tables', [])),
-                    output_tables=', '.join(action.get('output_tables', [])),
-                    business_purpose=action.get('business_purpose', '')
-                )
-                pipeline_flow.append(flow_item)
+        # Find all repositories
+        repos = self.find_repositories(base_path)
+        if not repos:
+            print("❌ No repositories found!")
+            return
         
-        return pipeline_flow
+        print(f"\n📊 Found {len(repos)} repositories to analyze")
+        
+        all_workflows = []
+        all_coordinators = []
+        unique_workflow_names = set()
+        unique_coordinator_names = set()
+        
+        # Analyze each repository
+        for repo in repos:
+            workflows, coordinators = self.find_oozie_files(repo)
+            
+            # Extract pipeline info and deduplicate
+            for wf in workflows:
+                info = self.extract_pipeline_info(wf['file_path'])
+                wf.update(info)
+                
+                # Only add if we haven't seen this workflow name before
+                if wf['name'] not in unique_workflow_names:
+                    unique_workflow_names.add(wf['name'])
+                    all_workflows.append(wf)
+                else:
+                    print(f"    ⚠️  Duplicate workflow skipped: {wf['name']}")
+            
+            for coord in coordinators:
+                info = self.extract_pipeline_info(coord['file_path'])
+                coord.update(info)
+                
+                # Only add if we haven't seen this coordinator name before
+                if coord['name'] not in unique_coordinator_names:
+                    unique_coordinator_names.add(coord['name'])
+                    all_coordinators.append(coord)
+                else:
+                    print(f"    ⚠️  Duplicate coordinator skipped: {coord['name']}")
+            
+            # Update summary with unique counts
+            self.repo_summary[repo.name]['workflows'] = len([w for w in all_workflows if w['repo'] == repo.name])
+            self.repo_summary[repo.name]['coordinators'] = len([c for c in all_coordinators if c['repo'] == repo.name])
+            self.repo_summary[repo.name]['total_pipelines'] = self.repo_summary[repo.name]['workflows'] + self.repo_summary[repo.name]['coordinators']
+        
+        self.workflows = all_workflows
+        self.coordinators = all_coordinators
+        
+        print(f"\n✅ Analysis Complete!")
+        print(f"🔄 Unique Workflows (Pipelines): {len(all_workflows)}")
+        print(f"⏰ Unique Coordinators (Triggers): {len(all_coordinators)}")
+        print(f"📊 Total Unique Items: {len(all_workflows) + len(all_coordinators)}")
     
-    def _create_summary(self, workflow_analyses: List[OozieWorkflow], script_analyses: List[ScriptInfo], 
-                       used_scripts: Set[Path], unused_scripts: Set[Path]) -> Dict[str, Any]:
-        """Create analysis summary"""
-        total_workflows = len(workflow_analyses)
-        total_scripts = len(used_scripts) + len(unused_scripts)
-        used_scripts_count = len(used_scripts)
-        unused_scripts_count = len(unused_scripts)
-        
-        # Technology breakdown
-        tech_breakdown = {}
-        for script in script_analyses:
-            tech = script.technology
-            tech_breakdown[tech] = tech_breakdown.get(tech, 0) + 1
-        
-        # Workflow frequency analysis
-        frequency_analysis = {}
-        for workflow in workflow_analyses:
-            freq = workflow.frequency
-            frequency_analysis[freq] = frequency_analysis.get(freq, 0) + 1
-        
-        return {
-            'total_workflows': total_workflows,
-            'total_scripts': total_scripts,
-            'used_scripts_count': used_scripts_count,
-            'unused_scripts_count': unused_scripts_count,
-            'technology_breakdown': tech_breakdown,
-            'frequency_analysis': frequency_analysis,
-            'workflow_execution_order': [w.name for w in sorted(workflow_analyses, key=lambda x: x.execution_order)]
-        }
-    
-    def generate_excel_report(self, analysis: Dict[str, Any], output_file: str = "hadoop_oozie_analysis.xlsx"):
+    def generate_excel_report(self, output_file):
         """Generate comprehensive Excel report"""
-        print(f"📊 Generating Excel report: {output_file}")
+        print(f"\n📊 Generating Excel report: {output_file}")
         
         with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
             
-            # Summary Sheet
+            # 1. Repository Summary
             summary_data = []
-            summary = analysis['summary']
-            summary_data.append({
-                'Metric': 'Total Workflows',
-                'Value': summary['total_workflows']
-            })
-            summary_data.append({
-                'Metric': 'Total Scripts',
-                'Value': summary['total_scripts']
-            })
-            summary_data.append({
-                'Metric': 'Used Scripts',
-                'Value': summary['used_scripts_count']
-            })
-            summary_data.append({
-                'Metric': 'Unused Scripts',
-                'Value': summary['unused_scripts_count']
-            })
-            summary_data.append({
-                'Metric': 'Usage Percentage',
-                'Value': f"{(summary['used_scripts_count'] / summary['total_scripts'] * 100):.1f}%"
-            })
-            
-            pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
-            
-            # Workflows Sheet
-            workflows_data = []
-            for workflow in analysis['workflows']:
-                workflows_data.append({
-                    'Execution Order': workflow.execution_order,
-                    'Workflow Name': workflow.name,
-                    'File Path': workflow.file_path,
-                    'Frequency': workflow.frequency,
-                    'Total Actions': workflow.total_actions,
-                    'Technologies': str(workflow.technologies),
-                    'Input Tables': ', '.join(workflow.input_tables),
-                    'Output Tables': ', '.join(workflow.output_tables)
+            for repo, counts in self.repo_summary.items():
+                summary_data.append({
+                    'Repository': repo,
+                    'Pipelines (Workflows)': counts['workflows'],
+                    'Triggers (Coordinators)': counts['coordinators'],
+                    'Total Items': counts['total_pipelines']
                 })
             
-            pd.DataFrame(workflows_data).to_excel(writer, sheet_name='Workflows', index=False)
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='Repository_Summary', index=False)
             
-            # Scripts Sheet
-            scripts_data = []
-            for script in analysis['scripts']:
-                scripts_data.append({
-                    'Script Name': script.name,
-                    'Path': script.path,
-                    'Technology': script.technology,
-                    'Is Used': script.is_used,
-                    'Used in Workflows': ', '.join(script.used_in_workflows),
-                    'Execution Order': script.execution_order,
-                    'Input Tables': ', '.join(script.input_tables),
-                    'Output Tables': ', '.join(script.output_tables),
-                    'Business Logic': script.business_logic
+            # 2. PIPELINES ONLY (Workflows)
+            if self.workflows:
+                pipeline_data = []
+                for wf in self.workflows:
+                    pipeline_data.append({
+                        'Repository': wf['repo'],
+                        'Pipeline_Name': wf['name'],
+                        'File_Path': wf['relative_path'],
+                        'Location_Type': wf['location'],
+                        'Type': 'PIPELINE (Workflow)'
+                    })
+                
+                pipelines_df = pd.DataFrame(pipeline_data)
+                pipelines_df.to_excel(writer, sheet_name='PIPELINES_ONLY', index=False)
+            
+            # 3. TRIGGERS ONLY (Coordinators)
+            if self.coordinators:
+                trigger_data = []
+                for coord in self.coordinators:
+                    trigger_data.append({
+                        'Repository': coord['repo'],
+                        'Trigger_Name': coord['name'],
+                        'File_Path': coord['relative_path'],
+                        'Location_Type': coord['location'],
+                        'Type': 'TRIGGER (Coordinator)'
+                    })
+                
+                triggers_df = pd.DataFrame(trigger_data)
+                triggers_df.to_excel(writer, sheet_name='TRIGGERS_ONLY', index=False)
+            
+            # 4. Combined View (for reference)
+            combined_data = []
+            
+            for wf in self.workflows:
+                combined_data.append({
+                    'Repository': wf['repo'],
+                    'Name': wf['name'],
+                    'Type': 'PIPELINE',
+                    'Location': wf['location'],
+                    'File_Path': wf['relative_path']
                 })
             
-            pd.DataFrame(scripts_data).to_excel(writer, sheet_name='Scripts', index=False)
-            
-            # Pipeline Flow Sheet
-            pipeline_data = []
-            for flow in analysis['pipeline_flow']:
-                pipeline_data.append({
-                    'Workflow Name': flow.workflow_name,
-                    'Step Number': flow.step_number,
-                    'Action Name': flow.action_name,
-                    'Script Name': flow.script_name,
-                    'Technology': flow.technology,
-                    'Input Tables': flow.input_tables,
-                    'Output Tables': flow.output_tables,
-                    'Business Purpose': flow.business_purpose
+            for coord in self.coordinators:
+                combined_data.append({
+                    'Repository': coord['repo'],
+                    'Name': coord['name'],
+                    'Type': 'TRIGGER',
+                    'Location': coord['location'],
+                    'File_Path': coord['relative_path']
                 })
             
-            pd.DataFrame(pipeline_data).to_excel(writer, sheet_name='Pipeline Flow', index=False)
+            combined_df = pd.DataFrame(combined_data)
+            combined_df.to_excel(writer, sheet_name='Combined_View', index=False)
             
-            # Unused Scripts Sheet
-            unused_data = []
-            for script in analysis['unused_scripts']:
-                unused_data.append({
-                    'Unused Script': str(script),
-                    'Technology': Path(script).suffix,
-                    'Size': f"{script.stat().st_size} bytes" if script.exists() else "Unknown"
+            # 5. Location Analysis
+            location_data = defaultdict(lambda: {'pipelines': 0, 'triggers': 0})
+            
+            for wf in self.workflows:
+                location_data[wf['location']]['pipelines'] += 1
+            
+            for coord in self.coordinators:
+                location_data[coord['location']]['triggers'] += 1
+            
+            location_summary = []
+            for location, counts in location_data.items():
+                location_summary.append({
+                    'Location_Type': location,
+                    'Pipelines': counts['pipelines'],
+                    'Triggers': counts['triggers'],
+                    'Total': counts['pipelines'] + counts['triggers']
                 })
             
-            pd.DataFrame(unused_data).to_excel(writer, sheet_name='Unused Scripts', index=False)
-            
-            # Technology Breakdown Sheet
-            tech_data = []
-            for tech, count in analysis['summary']['technology_breakdown'].items():
-                tech_data.append({
-                    'Technology': tech,
-                    'Count': count,
-                    'Percentage': f"{(count / analysis['summary']['used_scripts_count'] * 100):.1f}%"
-                })
-            
-            pd.DataFrame(tech_data).to_excel(writer, sheet_name='Technology Breakdown', index=False)
+            location_df = pd.DataFrame(location_summary)
+            location_df.to_excel(writer, sheet_name='Location_Analysis', index=False)
         
         print(f"✅ Excel report generated: {output_file}")
+    
+    def print_summary(self):
+        """Print analysis summary"""
+        print("\n" + "=" * 60)
+        print("📊 ANALYSIS SUMMARY")
+        print("=" * 60)
+        
+        print(f"\n🏢 REPOSITORIES ({len(self.repo_summary)}):")
+        for repo, counts in self.repo_summary.items():
+            print(f"  📁 {repo}: {counts['workflows']} pipelines, {counts['coordinators']} triggers")
+        
+        print(f"\n📈 TOTALS:")
+        print(f"  🔄 Pipelines (Workflows): {len(self.workflows)}")
+        print(f"  ⏰ Triggers (Coordinators): {len(self.coordinators)}")
+        print(f"  📊 Total Items: {len(self.workflows) + len(self.coordinators)}")
+        
+        print(f"\n📍 LOCATION BREAKDOWN:")
+        location_counts = defaultdict(int)
+        for wf in self.workflows:
+            location_counts[f"{wf['location']} (pipelines)"] += 1
+        for coord in self.coordinators:
+            location_counts[f"{coord['location']} (triggers)"] += 1
+        
+        for location, count in location_counts.items():
+            print(f"  📂 {location}: {count}")
 
 def main():
-    """Main function"""
-    import sys
+    if len(sys.argv) < 2:
+        print("Usage: python hadoop_repo_structure_analyzer.py <base_path>")
+        print("Example: python hadoop_repo_structure_analyzer.py /path/to/hadoop/repos")
+        sys.exit(1)
     
-    print("🚀 Hadoop Oozie Workflow Analyzer")
-    print("=" * 60)
+    base_path = sys.argv[1]
     
-    # Check command line arguments
-    if len(sys.argv) == 2:
-        hadoop_repo_path = sys.argv[1]
-    else:
-        print("Usage: python hadoop_oozie_analyzer.py <hadoop_path>")
-        print("\nExample:")
-        print("python hadoop_oozie_analyzer.py /path/to/hadoop/repo")
-        print("\nOr run with default test path:")
-        print("python hadoop_oozie_analyzer.py")
-        
-        # Use default test path
-        hadoop_repo_path = "./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion"
-        print(f"\n🔧 Using default test path: {hadoop_repo_path}")
-    
-    if not hadoop_repo_path:
-        print("❌ Please provide Hadoop repository path")
-        return
-    
-    # Initialize analyzer
-    analyzer = HadoopOozieAnalyzer(hadoop_repo_path)
-    
-    # Perform analysis
-    analysis = analyzer.analyze_hadoop_repository()
+    analyzer = HadoopRepoStructureAnalyzer()
+    analyzer.analyze_repositories(base_path)
+    analyzer.print_summary()
     
     # Generate Excel report
-    analyzer.generate_excel_report(analysis)
+    output_file = "HADOOP_REPO_STRUCTURE_ANALYSIS.xlsx"
+    analyzer.generate_excel_report(output_file)
     
-    # Print summary
-    summary = analysis['summary']
-    print(f"\n📊 Analysis Complete!")
-    print(f"   Total Workflows: {summary['total_workflows']}")
-    print(f"   Total Scripts: {summary['total_scripts']}")
-    print(f"   Used Scripts: {summary['used_scripts_count']}")
-    print(f"   Unused Scripts: {summary['unused_scripts_count']}")
-    print(f"   Usage: {(summary['used_scripts_count'] / summary['total_scripts'] * 100):.1f}%")
-    
-    print(f"\n🔧 Technology Breakdown:")
-    for tech, count in summary['technology_breakdown'].items():
-        print(f"   {tech.upper()}: {count} scripts")
-    
-    print(f"\n✅ Excel report generated: hadoop_oozie_analysis.xlsx")
+    print(f"\n🎉 Analysis complete! Check {output_file} for detailed results.")
 
 if __name__ == "__main__":
     main()
