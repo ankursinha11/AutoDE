@@ -339,8 +339,22 @@ class OozieWorkflowAnalyzer:
         """Analyze all Oozie workflows in the repository"""
         print("🔍 Analyzing Oozie Workflows...")
         
-        # Find all workflow.xml files
-        workflow_files = list(self.repo_path.glob("**/workflow.xml"))
+        # Find all workflow XML files (not coordinator files)
+        workflow_patterns = [
+            "**/*workflow*.xml",
+            "**/workflows/**/*.xml",
+            "**/oozie/**/*workflow*.xml"
+        ]
+        
+        workflow_files = []
+        for pattern in workflow_patterns:
+            files = list(self.repo_path.glob(pattern))
+            workflow_files.extend(files)
+        
+        # Remove duplicates and filter out coordinator files
+        workflow_files = list(set(workflow_files))
+        workflow_files = [f for f in workflow_files if 'coordinator' not in f.name.lower()]
+        
         print(f"📋 Found {len(workflow_files)} workflow files")
         
         workflows = []
@@ -356,7 +370,7 @@ class OozieWorkflowAnalyzer:
     
     def _analyze_single_workflow(self, workflow_file: Path) -> WorkflowAnalysis:
         """Analyze a single Oozie workflow"""
-        workflow_name = workflow_file.parent.name
+        workflow_name = workflow_file.stem  # Use file name without extension
         print(f"🔍 Analyzing workflow: {workflow_name}")
         
         # Parse workflow XML
@@ -1037,7 +1051,7 @@ def main():
     print("=" * 60)
     print("📋 Configuration:")
     print("   Gemini API Key: AIzaSyCDFhjA94fAV5UYYxX43WVm19T24smy4vA")
-    print("   Hadoop Path: ./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion")
+    print("   Hadoop Path: ./app-cdd")
     print("=" * 60)
     
     # Test Gemini connection
@@ -1047,10 +1061,14 @@ def main():
     
     # Check Hadoop directory
     print("\n📁 Checking Hadoop repository directory...")
-    hadoop_path = "./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion"
+    hadoop_path = "./app-cdd"  # Updated to use the correct app-cdd path
     if not os.path.exists(hadoop_path):
         print(f"❌ Hadoop repository not found: {hadoop_path}")
-        print("   Please make sure the Hadoop directory exists")
+        print("   Please make sure the app-cdd directory exists")
+        print("   Current directory contents:")
+        for item in os.listdir("."):
+            if os.path.isdir(item):
+                print(f"     📁 {item}/")
         return
     
     print("✅ Hadoop repository directory found!")
