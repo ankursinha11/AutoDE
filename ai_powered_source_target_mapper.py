@@ -28,8 +28,7 @@ from typing import Dict, List, Set, Tuple, Optional, Any
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import pandas as pd
-import openai
-from openai import AzureOpenAI
+import google.generativeai as genai
 import base64
 import hashlib
 
@@ -78,38 +77,24 @@ class RepositoryAnalysis:
     pii_fields: int
     primary_keys: int
 
-class AzureOpenAIAnalyzer:
-    """Azure OpenAI integration for intelligent code analysis"""
+class GeminiAnalyzer:
+    """Google Gemini integration for intelligent code analysis"""
     
-    def __init__(self, api_key: str, endpoint: str, api_version: str = "2024-02-15-preview"):
-        """Initialize Azure OpenAI client"""
-        self.client = AzureOpenAI(
-            api_key=api_key,
-            api_version=api_version,
-            azure_endpoint=endpoint
-        )
-        self.model = "gpt-4"  # Use GPT-4 for best analysis results
+    def __init__(self, api_key: str, model: str = "gemini-1.5-pro"):
+        """Initialize Gemini client"""
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel(model)
     
     def analyze_code_for_field_mapping(self, code_content: str, file_type: str, table_context: str = "") -> Dict[str, Any]:
-        """Use AI to analyze code and extract field mappings"""
+        """Use Gemini to analyze code and extract field mappings"""
         try:
             prompt = self._create_field_mapping_prompt(code_content, file_type, table_context)
             
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are an expert data engineer analyzing code for source-to-target field mappings."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.1,
-                max_tokens=2000
-            )
-            
-            result = response.choices[0].message.content
-            return self._parse_ai_response(result)
+            response = self.model.generate_content(prompt)
+            return self._parse_ai_response(response.text)
             
         except Exception as e:
-            print(f"⚠️ AI Analysis Error: {e}")
+            print(f"⚠️ Gemini Analysis Error: {e}")
             return self._get_fallback_analysis(code_content, file_type)
     
     def _create_field_mapping_prompt(self, code_content: str, file_type: str, table_context: str) -> str:
@@ -251,7 +236,7 @@ Please provide a JSON response with this structure:
 class HadoopRepositoryAnalyzer:
     """Enhanced Hadoop repository analyzer with AI-powered field mapping"""
     
-    def __init__(self, repo_path: str, ai_analyzer: AzureOpenAIAnalyzer):
+    def __init__(self, repo_path: str, ai_analyzer: GeminiAnalyzer):
         self.repo_path = Path(repo_path)
         self.ai_analyzer = ai_analyzer
         self.used_scripts = set()
@@ -556,7 +541,7 @@ class HadoopRepositoryAnalyzer:
 class DatabricksRepositoryAnalyzer:
     """Databricks repository analyzer with AI-powered field mapping"""
     
-    def __init__(self, repo_path: str, ai_analyzer: AzureOpenAIAnalyzer):
+    def __init__(self, repo_path: str, ai_analyzer: GeminiAnalyzer):
         self.repo_path = Path(repo_path)
         self.ai_analyzer = ai_analyzer
         self.field_id_counter = 1
@@ -968,9 +953,9 @@ class ExcelReportGenerator:
 class AIPoweredSourceTargetMapper:
     """Main class for AI-powered source-to-target mapping"""
     
-    def __init__(self, azure_openai_key: str, azure_openai_endpoint: str):
-        """Initialize the mapper with Azure OpenAI credentials"""
-        self.ai_analyzer = AzureOpenAIAnalyzer(azure_openai_key, azure_openai_endpoint)
+    def __init__(self, gemini_api_key: str):
+        """Initialize the mapper with Gemini credentials"""
+        self.ai_analyzer = GeminiAnalyzer(gemini_api_key)
         self.comparison_engine = ComparisonEngine()
         self.excel_generator = ExcelReportGenerator()
     
@@ -1059,12 +1044,11 @@ class AIPoweredSourceTargetMapper:
 
 def main():
     """Main function to run the AI-powered source-to-target mapper"""
-    print("🚀 AI-Powered Source-to-Target Mapping Tool")
+    print("🚀 AI-Powered Source-to-Target Mapping Tool (Gemini)")
     print("=" * 60)
     
-    # Configuration - Replace with your Azure OpenAI credentials
-    AZURE_OPENAI_KEY = "your-azure-openai-api-key-here"
-    AZURE_OPENAI_ENDPOINT = "https://your-resource.openai.azure.com/"
+    # Configuration - Replace with your Gemini API key
+    GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", "your-gemini-api-key-here")
     
     # Repository paths - Replace with your actual paths
     HADOOP_REPO_PATH = "./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion"
@@ -1076,7 +1060,7 @@ def main():
     
     try:
         # Initialize mapper
-        mapper = AIPoweredSourceTargetMapper(AZURE_OPENAI_KEY, AZURE_OPENAI_ENDPOINT)
+        mapper = AIPoweredSourceTargetMapper(GEMINI_API_KEY)
         
         # Analyze repositories
         analysis_results = mapper.analyze_repositories(
@@ -1100,9 +1084,9 @@ def main():
     except Exception as e:
         print(f"❌ Error: {e}")
         print("\n💡 Make sure to:")
-        print("   1. Set your Azure OpenAI API key and endpoint")
+        print("   1. Set your Gemini API key: export GOOGLE_API_KEY='your-key'")
         print("   2. Provide correct repository paths")
-        print("   3. Install required dependencies: pip install openai pandas openpyxl")
+        print("   3. Install required dependencies: pip install google-generativeai pandas openpyxl")
 
 if __name__ == "__main__":
     main()
