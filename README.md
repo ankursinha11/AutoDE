@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple Azure OpenAI Test - Step by Step
+Simple Azure OpenAI Test - Step by Step: AIzaSyCDFhjA94fAV5UYYxX43WVm19T24smy4vA
 =======================================
 """
 
