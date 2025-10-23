@@ -363,6 +363,9 @@ class OozieWorkflowAnalyzer:
                 workflow_analysis = self._analyze_single_workflow(workflow_file)
                 workflows.append(workflow_analysis)
                 print(f"✅ Analyzed workflow: {workflow_analysis.workflow_name}")
+                print(f"   Actions: {len(workflow_analysis.actions)}")
+                print(f"   Target Tables: {len(workflow_analysis.target_tables)}")
+                print(f"   Field Mappings: {len(workflow_analysis.field_mappings)}")
             except Exception as e:
                 print(f"⚠️ Error analyzing {workflow_file}: {e}")
         
@@ -376,6 +379,10 @@ class OozieWorkflowAnalyzer:
         # Parse workflow XML
         tree = ET.parse(workflow_file)
         root = tree.getroot()
+        
+        # Debug: Print XML structure
+        print(f"   📋 XML root tag: {root.tag}")
+        print(f"   📋 XML root attributes: {root.attrib}")
         
         # Extract actions
         actions = self._extract_workflow_actions(root, workflow_file.parent)
@@ -426,6 +433,11 @@ class OozieWorkflowAnalyzer:
             # Determine action type and extract details
             action_type, script_path, input_paths, output_paths, parameters = self._parse_action_details(action_elem, workflow_dir)
             
+            # Debug: Print action details
+            if action_type == "sub-workflow":
+                print(f"   🔍 Found sub-workflow: {action_name}, table: {parameters.get('table', 'N/A')}")
+            elif action_type != "unknown":
+                print(f"   🔍 Found {action_type} action: {action_name}")
             
             # Get control flow
             ok_elem = action_elem.find('ok') or action_elem.find('{uri:oozie:workflow:0.5}ok')
