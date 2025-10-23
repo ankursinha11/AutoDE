@@ -392,16 +392,30 @@ class OozieWorkflowAnalyzer:
         actions = []
         action_order = 0
         
-        for action_elem in root.findall('.//action'):
+        # Handle namespaces properly
+        namespaces = {
+            'wf': 'uri:oozie:workflow:0.5',
+            'shell': 'uri:oozie:shell-action:0.3',
+            'pig': 'uri:oozie:pig-action:0.2',
+            'mr': 'uri:oozie:map-reduce-action:0.2',
+            'java': 'uri:oozie:java-action:0.2',
+            'email': 'uri:oozie:email-action:0.2'
+        }
+        
+        # Find all action elements (with or without namespace)
+        action_elements = root.findall('.//action') + root.findall('.//{uri:oozie:workflow:0.5}action')
+        
+        for action_elem in action_elements:
             action_name = action_elem.get('name', 'unknown')
             action_order += 1
             
             # Determine action type and extract details
             action_type, script_path, input_paths, output_paths, parameters = self._parse_action_details(action_elem, workflow_dir)
             
+            
             # Get control flow
-            ok_elem = action_elem.find('ok')
-            error_elem = action_elem.find('error')
+            ok_elem = action_elem.find('ok') or action_elem.find('{uri:oozie:workflow:0.5}ok')
+            error_elem = action_elem.find('error') or action_elem.find('{uri:oozie:workflow:0.5}error')
             ok_action = ok_elem.get('to', 'end') if ok_elem is not None else 'end'
             error_action = error_elem.get('to', 'fail') if error_elem is not None else 'fail'
             
@@ -430,49 +444,78 @@ class OozieWorkflowAnalyzer:
         output_paths = []
         parameters = {}
         
-        # Check for different action types
-        if action_elem.find('.//shell') is not None:
+        # Check for different action types (with and without namespaces)
+        shell_elem = (action_elem.find('.//shell') or 
+                     action_elem.find('.//{uri:oozie:shell-action:0.3}shell') or
+                     action_elem.find('.//{uri:oozie:shell-action:0.2}shell'))
+        
+        pig_elem = (action_elem.find('.//pig') or 
+                   action_elem.find('.//{uri:oozie:pig-action:0.2}pig'))
+        
+        mr_elem = (action_elem.find('.//map-reduce') or 
+                  action_elem.find('.//{uri:oozie:map-reduce-action:0.2}map-reduce'))
+        
+        java_elem = (action_elem.find('.//java') or 
+                    action_elem.find('.//{uri:oozie:java-action:0.2}java'))
+        
+        subworkflow_elem = (action_elem.find('.//sub-workflow') or 
+                           action_elem.find('.//{uri:oozie:workflow:0.5}sub-workflow'))
+        
+        email_elem = (action_elem.find('.//email') or 
+                     action_elem.find('.//{uri:oozie:email-action:0.2}email'))
+        
+        if shell_elem is not None:
             action_type = "shell"
             script_path, input_paths, output_paths, parameters = self._parse_shell_action(action_elem, workflow_dir)
-        elif action_elem.find('.//pig') is not None:
+        elif pig_elem is not None:
             action_type = "pig"
             script_path, input_paths, output_paths, parameters = self._parse_pig_action(action_elem, workflow_dir)
-        elif action_elem.find('.//map-reduce') is not None:
+        elif mr_elem is not None:
             action_type = "map-reduce"
             script_path, input_paths, output_paths, parameters = self._parse_mapreduce_action(action_elem, workflow_dir)
-        elif action_elem.find('.//java') is not None:
+        elif java_elem is not None:
             action_type = "java"
             script_path, input_paths, output_paths, parameters = self._parse_java_action(action_elem, workflow_dir)
+        elif subworkflow_elem is not None:
+            action_type = "sub-workflow"
+            script_path, input_paths, output_paths, parameters = self._parse_subworkflow_action(action_elem, workflow_dir)
+        elif email_elem is not None:
+            action_type = "email"
+            script_path, input_paths, output_paths, parameters = self._parse_email_action(action_elem, workflow_dir)
         
         return action_type, script_path, input_paths, output_paths, parameters
     
     def _parse_shell_action(self, action_elem: ET.Element, workflow_dir: Path) -> Tuple[str, List[str], List[str], Dict[str, str]]:
         """Parse shell action details"""
-        shell_elem = action_elem.find('.//shell')
+        shell_elem = (action_elem.find('.//shell') or 
+                     action_elem.find('.//{uri:oozie:shell-action:0.3}shell') or
+                     action_elem.find('.//{uri:oozie:shell-action:0.2}shell'))
+        
         script_path = ""
         input_paths = []
         output_paths = []
         parameters = {}
         
-        # Extract script path from exec and arguments
-        exec_elem = shell_elem.find('exec')
-        if exec_elem is not None:
-            script_path = exec_elem.text or ""
+        if shell_elem is not None:
+            # Extract script path from exec and arguments
+            exec_elem = shell_elem.find('exec')
+            if exec_elem is not None:
+                script_path = exec_elem.text or ""
+                
+                # Look for script arguments
+                for arg_elem in shell_elem.findall('argument'):
+                    arg_text = arg_elem.text or ""
+                    if arg_text.endswith('.sh') or arg_text.endswith('.py'):
+                        script_path = arg_text
+                        break
             
-            # Look for script arguments
-            for arg_elem in shell_elem.findall('argument'):
-                arg_text = arg_elem.text or ""
-                if arg_text.endswith('.sh') or arg_text.endswith('.py'):
-                    script_path = arg_text
-                    break
-        
-        # Extract paths from script content if available
-        if script_path:
-            script_file = workflow_dir / script_path.split('/')[-1]
-            if script_file.exists():
-                script_content = script_file.read_text()
-                input_paths = self._extract_paths_from_content(script_content, "input")
-                output_paths = self._extract_paths_from_content(script_content, "output")
+            # Extract paths from script content if available
+            if script_path:
+                script_file = workflow_dir / script_path.split('/')[-1]
+                if script_file.exists():
+                    script_content = script_file.read_text()
+                    input_paths = self._extract_paths_from_content(script_content, "input")
+                    output_paths = self._extract_paths_from_content(script_content, "output")
         
         return script_path, input_paths, output_paths, parameters
     
@@ -541,6 +584,74 @@ class OozieWorkflowAnalyzer:
         
         return script_path, input_paths, output_paths, parameters
     
+    def _parse_subworkflow_action(self, action_elem: ET.Element, workflow_dir: Path) -> Tuple[str, List[str], List[str], Dict[str, str]]:
+        """Parse sub-workflow action details"""
+        subworkflow_elem = (action_elem.find('.//sub-workflow') or 
+                           action_elem.find('.//{uri:oozie:workflow:0.5}sub-workflow'))
+        
+        script_path = ""
+        input_paths = []
+        output_paths = []
+        parameters = {}
+        
+        if subworkflow_elem is not None:
+            # Extract app-path
+            app_path_elem = subworkflow_elem.find('app-path')
+            if app_path_elem is not None:
+                script_path = app_path_elem.text or ""
+            
+            # Extract configuration properties (try both with and without namespace)
+            config_elem = (subworkflow_elem.find('configuration') or 
+                          subworkflow_elem.find('{uri:oozie:workflow:0.5}configuration'))
+            
+            if config_elem is not None:
+                # Find all property elements (with and without namespace)
+                prop_elements = (config_elem.findall('property') + 
+                                config_elem.findall('{uri:oozie:workflow:0.5}property'))
+                
+                for prop_elem in prop_elements:
+                    name_elem = (prop_elem.find('name') or 
+                               prop_elem.find('{uri:oozie:workflow:0.5}name'))
+                    value_elem = (prop_elem.find('value') or 
+                                prop_elem.find('{uri:oozie:workflow:0.5}value'))
+                    
+                    if name_elem is not None and value_elem is not None:
+                        prop_name = name_elem.text or ""
+                        prop_value = value_elem.text or ""
+                        parameters[prop_name] = prop_value
+                        
+                        # Extract table names from parameters
+                        if prop_name == 'table':
+                            output_paths.append(prop_value)
+            
+        
+        return script_path, input_paths, output_paths, parameters
+    
+    def _parse_email_action(self, action_elem: ET.Element, workflow_dir: Path) -> Tuple[str, List[str], List[str], Dict[str, str]]:
+        """Parse email action details"""
+        email_elem = (action_elem.find('.//email') or 
+                     action_elem.find('.//{uri:oozie:email-action:0.2}email'))
+        
+        script_path = ""
+        input_paths = []
+        output_paths = []
+        parameters = {}
+        
+        if email_elem is not None:
+            # Extract email details
+            to_elem = email_elem.find('to')
+            subject_elem = email_elem.find('subject')
+            body_elem = email_elem.find('body')
+            
+            if to_elem is not None:
+                parameters['to'] = to_elem.text or ""
+            if subject_elem is not None:
+                parameters['subject'] = subject_elem.text or ""
+            if body_elem is not None:
+                parameters['body'] = body_elem.text or ""
+        
+        return script_path, input_paths, output_paths, parameters
+    
     def _extract_paths_from_content(self, content: str, path_type: str) -> List[str]:
         """Extract paths from script content"""
         paths = []
@@ -578,14 +689,32 @@ class OozieWorkflowAnalyzer:
         intermediate_tables = []
         
         all_paths = []
+        all_tables = set()
+        
         for action in actions:
             all_paths.extend(action.input_paths)
             all_paths.extend(action.output_paths)
+            
+            # Extract table names from sub-workflow parameters
+            if action.action_type == "sub-workflow":
+                table_name = action.parameters.get('table', '')
+                if table_name:
+                    all_tables.add(table_name)
+                    # Sub-workflow tables are typically target tables
+                    target_tables.append(DataTable(
+                        table_name=table_name,
+                        table_type="target",
+                        hdfs_path=f"/data/warehouse/{table_name}",
+                        schema="default",
+                        format="delta",
+                        fields=[],
+                        transformations=[f"Processed by {action.name}"]
+                    ))
         
         # Categorize tables based on usage patterns
         for path in set(all_paths):
             table_name = self.ai_analyzer._extract_table_name_from_path(path)
-            if table_name:
+            if table_name and table_name not in all_tables:
                 # Determine table type based on path patterns
                 if any(keyword in path.lower() for keyword in ['input', 'source', 'raw']):
                     table_type = "source"
@@ -627,6 +756,66 @@ class OozieWorkflowAnalyzer:
         """Generate field mappings by analyzing transformation scripts"""
         field_mappings = []
         
+        # Generate field mappings for sub-workflow tables
+        for action in actions:
+            if action.action_type == "sub-workflow":
+                table_name = action.parameters.get('table', '')
+                key_fields = action.parameters.get('key', '')
+                reconcile_by = action.parameters.get('reconcileby', '')
+                order_by = action.parameters.get('orderby', '')
+                
+                if table_name:
+                    # Create basic field mappings for sub-workflow tables
+                    if key_fields:
+                        for key_field in key_fields.split(','):
+                            key_field = key_field.strip()
+                            field_mapping = FieldMapping(
+                                id=str(self.field_id_counter),
+                                partner="CDD",
+                                schema="default",
+                                target_table_name=table_name,
+                                target_field_name=key_field,
+                                target_field_data_type="bigint",
+                                pk=True,
+                                contains_pii=False,
+                                field_type="primary_key",
+                                field_depends_on="",
+                                processing_order=self.field_id_counter,
+                                pre_processing_rules=f"Primary key field for {table_name}",
+                                source_field_names=key_field,
+                                source_dataset_name=f"Source system for {table_name}",
+                                field_definition=f"Primary key field identified from sub-workflow configuration",
+                                example_1="",
+                                example_2=""
+                            )
+                            field_mappings.append(field_mapping)
+                            self.field_id_counter += 1
+                    
+                    # Add reconcile field if different from key
+                    if reconcile_by and reconcile_by not in key_fields:
+                        field_mapping = FieldMapping(
+                            id=str(self.field_id_counter),
+                            partner="CDD",
+                            schema="default",
+                            target_table_name=table_name,
+                            target_field_name=reconcile_by,
+                            target_field_data_type="timestamp",
+                            pk=False,
+                            contains_pii=False,
+                            field_type="reconcile_field",
+                            field_depends_on="",
+                            processing_order=self.field_id_counter,
+                            pre_processing_rules=f"Reconcile field for {table_name}",
+                            source_field_names=reconcile_by,
+                            source_dataset_name=f"Source system for {table_name}",
+                            field_definition=f"Field used for reconciliation in {table_name}",
+                            example_1="",
+                            example_2=""
+                        )
+                        field_mappings.append(field_mapping)
+                        self.field_id_counter += 1
+        
+        # Analyze transformation scripts
         for action in actions:
             if action.script_path and action.action_type in ['pig', 'shell']:
                 # Find and analyze the script
@@ -848,7 +1037,7 @@ def main():
     print("=" * 60)
     print("📋 Configuration:")
     print("   Gemini API Key: AIzaSyCDFhjA94fAV5UYYxX43WVm19T24smy4vA")
-    print("   Hadoop Path: ./app-cdd")
+    print("   Hadoop Path: ./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion")
     print("=" * 60)
     
     # Test Gemini connection
@@ -858,9 +1047,10 @@ def main():
     
     # Check Hadoop directory
     print("\n📁 Checking Hadoop repository directory...")
-    if not os.path.exists("./app-cdd"):
-        print("❌ Hadoop repository not found: ./app-cdd")
-        print("   Please make sure the app-cdd directory exists")
+    hadoop_path = "./OneDrive_1_7-25-2025/Hadoop/app-data-ingestion"
+    if not os.path.exists(hadoop_path):
+        print(f"❌ Hadoop repository not found: {hadoop_path}")
+        print("   Please make sure the Hadoop directory exists")
         return
     
     print("✅ Hadoop repository directory found!")
@@ -869,7 +1059,7 @@ def main():
         # Initialize components
         print("\n🔧 Initializing Hadoop Oozie Workflow Analyzer...")
         ai_analyzer = GeminiAnalyzer("AIzaSyCDFhjA94fAV5UYYxX43WVm19T24smy4vA")
-        workflow_analyzer = OozieWorkflowAnalyzer("./app-cdd", ai_analyzer)
+        workflow_analyzer = OozieWorkflowAnalyzer(hadoop_path, ai_analyzer)
         excel_generator = ExcelReportGenerator()
         
         # Analyze workflows
