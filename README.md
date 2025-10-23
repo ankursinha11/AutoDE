@@ -100,7 +100,7 @@ class RepositoryAnalysis:
 class GeminiAnalyzer:
     """Google Gemini integration for intelligent code analysis"""
     
-    def __init__(self, api_key: str, model: str = "gemini-1.5-pro"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         """Initialize Gemini client"""
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(model)
@@ -347,8 +347,10 @@ class RepositoryAnalyzer:
                     processing_order=0
                 )
             
-            # Add source tables
-            table_analysis_map[target_table].source_tables.extend(source_tables)
+            # Add source tables (ensure they're unique)
+            existing_sources = set(table_analysis_map[target_table].source_tables)
+            new_sources = [s for s in source_tables if s not in existing_sources]
+            table_analysis_map[target_table].source_tables.extend(new_sources)
             
             # Process field mappings
             for mapping in field_mappings:
@@ -655,7 +657,7 @@ def test_gemini_connection():
     try:
         api_key = "AIzaSyCDFhjA94fAV5UYYxX43WVm19T24smy4vA"
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content("Hello, this is a test.")
         print("✅ Gemini connection successful!")
         return True
