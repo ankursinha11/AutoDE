@@ -55,6 +55,19 @@ class FieldMapping:
     example_1: str
     example_2: str
 
+@dataclass
+class PipelineAction:
+    """Data class for pipeline action information"""
+    action_name: str
+    action_type: str
+    processing_order: int
+    script_path: str
+    input_parameters: str
+    output_parameters: str
+    dependencies: str
+    error_handling: str
+    configuration: str
+
 class OozieWorkflowParser:
     """Parser for Oozie workflow XML files"""
     
@@ -258,34 +271,57 @@ class AIPoweredMapper:
         self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
     
     def analyze_complex_script(self, script_content: str, script_type: str) -> Dict[str, Any]:
-        """Use AI to analyze complex scripts and extract mappings"""
+        """Use AI to analyze complex scripts and extract comprehensive mappings"""
         try:
             prompt = f"""
-            Analyze this {script_type} script and extract the following information:
+            You are a data engineering expert analyzing a {script_type} script for source-target mapping.
             
-            1. Source datasets (tables in FROM/JOIN clauses)
-            2. Target dataset (INSERT INTO / CREATE TABLE)
-            3. Field mappings between source and target
-            4. Data transformations (CASE statements, CONCAT, etc.)
-            5. Data types and constraints
+            Analyze this script thoroughly and extract ALL the following information:
+            
+            1. Source datasets (tables in FROM/JOIN clauses) - be comprehensive
+            2. Target dataset (INSERT INTO / CREATE TABLE / CREATE OR REPLACE TABLE)
+            3. Complete field mappings between source and target with transformations
+            4. Data transformations (CASE statements, CONCAT, SUBSTRING, UPPER, LOWER, COALESCE, etc.)
+            5. Data types and constraints (VARCHAR, INT, DECIMAL, DATE, etc.)
+            6. JOIN conditions and relationships
+            7. WHERE clauses and filters
+            8. Aggregations (SUM, COUNT, AVG, etc.)
+            9. Window functions (ROW_NUMBER, RANK, etc.)
+            10. Business logic and calculations
             
             Script content:
             {script_content}
             
-            Please provide a structured JSON response with the following format:
+            Provide a detailed JSON response with this EXACT format:
             {{
-                "source_tables": ["table1", "table2"],
-                "target_table": "target_table",
+                "source_tables": ["schema.table1", "schema.table2"],
+                "target_table": "schema.target_table",
                 "field_mappings": [
                     {{
-                        "source_field": "source_col",
-                        "target_field": "target_col",
-                        "transformation": "CASE WHEN ...",
-                        "data_type": "VARCHAR(100)"
+                        "source_field": "source_col1",
+                        "target_field": "target_col1", 
+                        "transformation": "CASE WHEN source_col1 IS NULL THEN 'Unknown' ELSE source_col1 END",
+                        "data_type": "VARCHAR(100)",
+                        "business_logic": "Null handling with default value",
+                        "join_condition": "LEFT JOIN table2 ON table1.id = table2.id"
+                    }},
+                    {{
+                        "source_field": "col1, col2",
+                        "target_field": "concatenated_field",
+                        "transformation": "CONCAT(col1, '-', col2)",
+                        "data_type": "VARCHAR(200)",
+                        "business_logic": "Concatenate two fields with separator",
+                        "join_condition": ""
                     }}
                 ],
-                "transformations": ["transformation1", "transformation2"]
+                "transformations": ["CASE statements", "CONCAT operations", "Date formatting"],
+                "joins": ["LEFT JOIN table2 ON condition", "INNER JOIN table3 ON condition"],
+                "filters": ["WHERE status = 'ACTIVE'", "AND created_date > '2023-01-01'"],
+                "aggregations": ["SUM(amount)", "COUNT(DISTINCT user_id)"],
+                "business_rules": ["Data validation", "Status mapping", "Date calculations"]
             }}
+            
+            Be extremely thorough and extract EVERY field mapping and transformation.
             """
             
             response = self.model.generate_content(prompt)
@@ -296,12 +332,30 @@ class AIPoweredMapper:
                 logger.info("AI analysis completed successfully")
                 return result
             except json.JSONDecodeError:
-                logger.warning("AI response could not be parsed as JSON")
-                return self._fallback_analysis(script_content)
+                logger.warning("AI response could not be parsed as JSON, trying to extract manually")
+                return self._extract_from_text_response(response.text, script_content)
                 
         except Exception as e:
             logger.error(f"AI analysis failed: {e}")
             return self._fallback_analysis(script_content)
+    
+    def _extract_from_text_response(self, response_text: str, script_content: str) -> Dict[str, Any]:
+        """Extract information from AI text response when JSON parsing fails"""
+        # Try to find JSON-like content in the response
+        import re
+        
+        # Look for JSON patterns in the response
+        json_pattern = r'\{.*\}'
+        json_match = re.search(json_pattern, response_text, re.DOTALL)
+        
+        if json_match:
+            try:
+                return json.loads(json_match.group())
+            except:
+                pass
+        
+        # Fallback to heuristic analysis
+        return self._fallback_analysis(script_content)
     
     def _fallback_analysis(self, script_content: str) -> Dict[str, Any]:
         """Fallback analysis when AI fails"""
@@ -315,15 +369,19 @@ class AIPoweredMapper:
 class HadoopOozieMapper:
     """Main class for Hadoop Oozie mapping"""
     
-    def __init__(self, repo_path: str, api_key: Optional[str] = None):
+    def __init__(self, repo_path: str, api_key: str):
+        if not api_key:
+            raise ValueError("API key is required for AI-powered analysis")
+        
         self.repo_path = Path(repo_path)
         self.parser = OozieWorkflowParser(repo_path)
         self.analyzer = ScriptAnalyzer(repo_path)
-        self.ai_mapper = AIPoweredMapper(api_key) if api_key else None
+        self.ai_mapper = AIPoweredMapper(api_key)
         self.mappings = []
+        self.pipeline_actions = []
         
-    def process_workflow(self, workflow_name: str) -> List[FieldMapping]:
-        """Process a single workflow and extract mappings"""
+    def process_workflow(self, workflow_name: str) -> Tuple[List[FieldMapping], List[PipelineAction]]:
+        """Process a single workflow and extract mappings and pipeline actions"""
         logger.info(f"Processing workflow: {workflow_name}")
         
         # Find workflow files
@@ -331,9 +389,10 @@ class HadoopOozieMapper:
         
         if not workflow_files:
             logger.warning(f"No workflow files found for: {workflow_name}")
-            return []
+            return [], []
         
         all_mappings = []
+        all_actions = []
         
         for workflow_file in workflow_files:
             # Parse workflow XML
@@ -346,10 +405,15 @@ class HadoopOozieMapper:
             action_order = self._determine_action_order(workflow_info)
             
             for order, action in enumerate(action_order):
-                mappings = self._process_action(action, order + 1, workflow_info)
+                # Extract pipeline action information
+                pipeline_action = self._extract_pipeline_action(action, order + 1, workflow_info)
+                all_actions.append(pipeline_action)
+                
+                # Extract field mappings using AI
+                mappings = self._process_action_with_ai(action, order + 1, workflow_info)
                 all_mappings.extend(mappings)
         
-        return all_mappings
+        return all_mappings, all_actions
     
     def _determine_action_order(self, workflow_info: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Determine the processing order of actions based on transitions"""
@@ -385,8 +449,40 @@ class HadoopOozieMapper:
         
         return ordered_actions
     
-    def _process_action(self, action: Dict[str, Any], order: int, workflow_info: Dict[str, Any]) -> List[FieldMapping]:
-        """Process a single action and extract field mappings"""
+    def _extract_pipeline_action(self, action: Dict[str, Any], order: int, workflow_info: Dict[str, Any]) -> PipelineAction:
+        """Extract pipeline action information"""
+        # Extract input/output parameters from configuration
+        input_params = []
+        output_params = []
+        
+        for key, value in action.get('config', {}).items():
+            if 'input' in key.lower() or 'source' in key.lower():
+                input_params.append(f"{key}={value}")
+            elif 'output' in key.lower() or 'target' in key.lower():
+                output_params.append(f"{key}={value}")
+        
+        # Extract dependencies and error handling
+        transitions = action.get('transitions', {})
+        dependencies = transitions.get('ok', '')
+        error_handling = transitions.get('error', '')
+        
+        # Extract configuration as string
+        config_str = ', '.join([f"{k}={v}" for k, v in action.get('config', {}).items()])
+        
+        return PipelineAction(
+            action_name=action['name'],
+            action_type=action['type'] or 'unknown',
+            processing_order=order,
+            script_path=action['script_path'] or '',
+            input_parameters='; '.join(input_params),
+            output_parameters='; '.join(output_params),
+            dependencies=dependencies,
+            error_handling=error_handling,
+            configuration=config_str
+        )
+    
+    def _process_action_with_ai(self, action: Dict[str, Any], order: int, workflow_info: Dict[str, Any]) -> List[FieldMapping]:
+        """Process a single action and extract field mappings using AI"""
         mappings = []
         
         if not action['script_path']:
@@ -399,36 +495,81 @@ class HadoopOozieMapper:
         if not script_content:
             return mappings
         
-        # Analyze script
-        if self.ai_mapper and len(script_content) > 1000:  # Use AI for complex scripts
-            analysis = self.ai_mapper.analyze_complex_script(script_content, action['type'])
-        else:
-            analysis = self._heuristic_analysis(script_content)
+        logger.info(f"Analyzing script with AI for action: {action['name']}")
+        
+        # Always use AI analysis (mandatory)
+        analysis = self.ai_mapper.analyze_complex_script(script_content, action['type'])
         
         # Convert analysis to FieldMapping objects
         for i, field_mapping in enumerate(analysis.get('field_mappings', [])):
+            # Determine if field contains PII (basic heuristics)
+            contains_pii = self._detect_pii(field_mapping.get('target_field', ''))
+            
+            # Determine if field is primary key
+            is_pk = self._detect_primary_key(field_mapping.get('target_field', ''))
+            
             mapping = FieldMapping(
                 id=f"{workflow_info['workflow_name']}_{action['name']}_{i+1}",
-                partner="Unknown",
-                schema="default",
+                partner="Data Pipeline",
+                schema=self._extract_schema(analysis.get('target_table', 'unknown')),
                 target_table_name=analysis.get('target_table', 'unknown'),
                 target_field_name=field_mapping.get('target_field', 'unknown'),
                 target_field_data_type=field_mapping.get('data_type', 'VARCHAR'),
-                pk=False,
-                contains_pii=False,
+                pk=is_pk,
+                contains_pii=contains_pii,
                 field_type="data",
                 field_depends_on=field_mapping.get('source_field', ''),
                 processing_order=order,
                 pre_processing_rules=field_mapping.get('transformation', ''),
                 source_field_names=field_mapping.get('source_field', ''),
                 source_dataset_name=', '.join(analysis.get('source_tables', [])),
-                field_definition=field_mapping.get('transformation', ''),
-                example_1="",
-                example_2=""
+                field_definition=field_mapping.get('business_logic', ''),
+                example_1=self._generate_example(field_mapping.get('transformation', '')),
+                example_2=self._generate_example2(field_mapping.get('transformation', ''))
             )
             mappings.append(mapping)
         
         return mappings
+    
+    def _detect_pii(self, field_name: str) -> bool:
+        """Detect if field contains PII"""
+        pii_keywords = ['ssn', 'social', 'email', 'phone', 'address', 'name', 'dob', 'birth', 'credit', 'card']
+        return any(keyword in field_name.lower() for keyword in pii_keywords)
+    
+    def _detect_primary_key(self, field_name: str) -> bool:
+        """Detect if field is a primary key"""
+        pk_keywords = ['id', 'key', 'pk', 'primary']
+        return any(keyword in field_name.lower() for keyword in pk_keywords)
+    
+    def _extract_schema(self, table_name: str) -> str:
+        """Extract schema from table name"""
+        if '.' in table_name:
+            return table_name.split('.')[0]
+        return 'default'
+    
+    def _generate_example(self, transformation: str) -> str:
+        """Generate example value based on transformation"""
+        if 'CASE' in transformation.upper():
+            return 'Conditional value'
+        elif 'CONCAT' in transformation.upper():
+            return 'Concatenated string'
+        elif 'SUM' in transformation.upper():
+            return '12345.67'
+        elif 'COUNT' in transformation.upper():
+            return '100'
+        else:
+            return 'Sample value'
+    
+    def _generate_example2(self, transformation: str) -> str:
+        """Generate second example value"""
+        if 'DATE' in transformation.upper():
+            return '2023-12-31'
+        elif 'UPPER' in transformation.upper():
+            return 'UPPERCASE'
+        elif 'LOWER' in transformation.upper():
+            return 'lowercase'
+        else:
+            return 'Another sample'
     
     def _heuristic_analysis(self, script_content: str) -> Dict[str, Any]:
         """Heuristic analysis of script content"""
@@ -443,42 +584,61 @@ class HadoopOozieMapper:
             'transformations': []
         }
     
-    def generate_excel_output(self, mappings: List[FieldMapping], output_path: str):
-        """Generate Excel output with field mappings"""
-        if not mappings:
-            logger.warning("No mappings to export")
+    def generate_excel_output(self, mappings: List[FieldMapping], pipeline_actions: List[PipelineAction], output_path: str):
+        """Generate Excel output with 2 sheets: Pipeline Flow and STTM Mapping"""
+        if not mappings and not pipeline_actions:
+            logger.warning("No data to export")
             return
         
-        # Convert to DataFrame
-        df = pd.DataFrame([asdict(mapping) for mapping in mappings])
-        
-        # Write to Excel
+        # Create Excel writer
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Field_Mappings', index=False)
             
-            # Add summary sheet
+            # Sheet 1: Pipeline Flow
+            if pipeline_actions:
+                pipeline_df = pd.DataFrame([asdict(action) for action in pipeline_actions])
+                pipeline_df.to_excel(writer, sheet_name='Pipeline_Flow', index=False)
+                logger.info(f"Pipeline Flow sheet created with {len(pipeline_actions)} actions")
+            
+            # Sheet 2: STTM Mapping
+            if mappings:
+                sttm_df = pd.DataFrame([asdict(mapping) for mapping in mappings])
+                sttm_df.to_excel(writer, sheet_name='STTM_Mapping', index=False)
+                logger.info(f"STTM Mapping sheet created with {len(mappings)} field mappings")
+            
+            # Summary sheet
             summary_data = {
-                'Metric': ['Total Mappings', 'Unique Target Tables', 'Unique Source Tables', 'Workflows Processed'],
+                'Metric': [
+                    'Total Pipeline Actions',
+                    'Total Field Mappings', 
+                    'Unique Target Tables',
+                    'Unique Source Tables',
+                    'Actions with PII Fields',
+                    'Primary Key Fields'
+                ],
                 'Value': [
+                    len(pipeline_actions),
                     len(mappings),
-                    df['target_table_name'].nunique(),
-                    df['source_dataset_name'].nunique(),
-                    df['id'].str.split('_').str[0].nunique()
+                    len(set(m.target_table_name for m in mappings)) if mappings else 0,
+                    len(set(m.source_dataset_name for m in mappings)) if mappings else 0,
+                    len([m for m in mappings if m.contains_pii]) if mappings else 0,
+                    len([m for m in mappings if m.pk]) if mappings else 0
                 ]
             }
             summary_df = pd.DataFrame(summary_data)
             summary_df.to_excel(writer, sheet_name='Summary', index=False)
         
         logger.info(f"Excel output generated: {output_path}")
+        logger.info(f"  - Pipeline Flow: {len(pipeline_actions)} actions")
+        logger.info(f"  - STTM Mapping: {len(mappings)} field mappings")
 
 def main():
     """Main function"""
-    parser = argparse.ArgumentParser(description='Hadoop Oozie Workflow Mapper')
+    parser = argparse.ArgumentParser(description='Hadoop Oozie Workflow Mapper with AI Analysis')
     parser.add_argument('repo_path', help='Path to Hadoop repository')
     parser.add_argument('workflow_name', help='Name of Oozie workflow to process')
+    parser.add_argument('api_key', help='Gemini API key for AI-powered analysis (required)')
     parser.add_argument('--output', '-o', help='Output Excel file path', 
-                       default=f'hadoop_mapping_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
-    parser.add_argument('--api-key', help='Gemini API key for AI-powered analysis')
+                       default=f'hadoop_pipeline_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     
     args = parser.parse_args()
@@ -491,23 +651,45 @@ def main():
         logger.error(f"Repository path does not exist: {args.repo_path}")
         sys.exit(1)
     
-    # Initialize mapper
-    mapper = HadoopOozieMapper(args.repo_path, args.api_key)
+    if not args.api_key:
+        logger.error("Gemini API key is required for AI-powered analysis")
+        sys.exit(1)
     
-    # Process workflow
-    logger.info(f"Starting analysis of workflow: {args.workflow_name}")
-    mappings = mapper.process_workflow(args.workflow_name)
-    
-    if mappings:
-        logger.info(f"Found {len(mappings)} field mappings")
+    try:
+        # Initialize mapper
+        logger.info(f"Initializing AI-powered mapper for repository: {args.repo_path}")
+        mapper = HadoopOozieMapper(args.repo_path, args.api_key)
         
-        # Generate Excel output
-        mapper.generate_excel_output(mappings, args.output)
-        logger.info(f"Analysis complete. Output saved to: {args.output}")
-    else:
-        logger.warning("No mappings found")
+        # Process workflow
+        logger.info(f"Starting AI analysis of workflow: {args.workflow_name}")
+        mappings, pipeline_actions = mapper.process_workflow(args.workflow_name)
+        
+        if mappings or pipeline_actions:
+            logger.info(f"Analysis complete:")
+            logger.info(f"  - Found {len(pipeline_actions)} pipeline actions")
+            logger.info(f"  - Found {len(mappings)} field mappings")
+            
+            # Generate Excel output with 2 sheets
+            mapper.generate_excel_output(mappings, pipeline_actions, args.output)
+            logger.info(f"✅ Analysis complete. Output saved to: {args.output}")
+            logger.info(f"📊 Excel file contains:")
+            logger.info(f"   - Sheet 1: Pipeline Flow ({len(pipeline_actions)} actions)")
+            logger.info(f"   - Sheet 2: STTM Mapping ({len(mappings)} field mappings)")
+            logger.info(f"   - Sheet 3: Summary")
+        else:
+            logger.warning("No data found")
+            logger.warning("This could mean:")
+            logger.warning("  - Workflow name not found in repository")
+            logger.warning("  - No workflow.xml files found")
+            logger.warning("  - Script files are missing or inaccessible")
     
-    logger.info("Analysis completed")
+    except Exception as e:
+        logger.error(f"Error during processing: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    
+    logger.info("Analysis completed successfully")
 
 if __name__ == "__main__":
     main()
