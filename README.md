@@ -369,14 +369,12 @@ class AIPoweredMapper:
 class HadoopOozieMapper:
     """Main class for Hadoop Oozie mapping"""
     
-    def __init__(self, repo_path: str, api_key: str):
-        if not api_key:
-            raise ValueError("API key is required for AI-powered analysis")
-        
+    def __init__(self, repo_path: str):
         self.repo_path = Path(repo_path)
         self.parser = OozieWorkflowParser(repo_path)
         self.analyzer = ScriptAnalyzer(repo_path)
-        self.ai_mapper = AIPoweredMapper(api_key)
+        # Hardcoded Gemini API key
+        self.ai_mapper = AIPoweredMapper("AIzaSyCDFhjA94fAV5UYYxX43WVm19T24smy4vA")
         self.mappings = []
         self.pipeline_actions = []
         
@@ -636,7 +634,6 @@ def main():
     parser = argparse.ArgumentParser(description='Hadoop Oozie Workflow Mapper with AI Analysis')
     parser.add_argument('repo_path', help='Path to Hadoop repository')
     parser.add_argument('workflow_name', help='Name of Oozie workflow to process')
-    parser.add_argument('api_key', help='Gemini API key for AI-powered analysis (required)')
     parser.add_argument('--output', '-o', help='Output Excel file path', 
                        default=f'hadoop_pipeline_analysis_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
@@ -651,14 +648,10 @@ def main():
         logger.error(f"Repository path does not exist: {args.repo_path}")
         sys.exit(1)
     
-    if not args.api_key:
-        logger.error("Gemini API key is required for AI-powered analysis")
-        sys.exit(1)
-    
     try:
-        # Initialize mapper
+        # Initialize mapper (API key is hardcoded)
         logger.info(f"Initializing AI-powered mapper for repository: {args.repo_path}")
-        mapper = HadoopOozieMapper(args.repo_path, args.api_key)
+        mapper = HadoopOozieMapper(args.repo_path)
         
         # Process workflow
         logger.info(f"Starting AI analysis of workflow: {args.workflow_name}")
