@@ -1,0 +1,59 @@
+# Ab Initio Parser Patterns (Enhanced with FAWN approach)
+
+# Graph identification
+GRAPH_ID: "0"
+GRAPH_TYPE: "XXGrepository"
+
+# Component identification
+COMPONENT_NAME: "Ab Initio Software"
+ALLOWED_COMPONENT_TYPES:
+  - "Input_File"
+  - "Output_File"
+  - "Lookup_File"
+  - "Join"
+  - "Rollup"
+  - "Filter"
+  - "Sort"
+  - "Reformat"
+  - "Normalize"
+  - "Denormalize"
+
+# Patterns for extraction
+BLOCK_INTERNAL_PATTERN: '\{[^{}]*\{[^{}]*\}[^{}]*\}'
+PARAMETER_SECTION_PATTERN: '!fparameters\s*\{([^}]*(?:\{[^}]*\}[^}]*)*)\}'
+PARAMETER_PATTERN: '\{(\d+)\|([^|]*)\|!([^|]+)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^}]*)\}'
+
+# End section parsing
+END_SECTION_MIN_LENGTH: 9
+
+# Column names for output
+COMP_DISPLAY_LABEL: "CompDisplay Label"
+COMPONENT_TYPE_COL: "Component Type"
+DATASET_NAMES: "DataSet Names"
+DML_COL: "DML"
+KEY_PARAM_VALUE: "Key Parameter Value"
+
+# Parameter names
+LAYOUT_PARAM: "layout"
+KEY_PARAM: "key"
+UNIX_PARAM_PATTERN: '\$'
+
+# DML parameters per component type
+DML_PARAMS:
+  Input_File: "layout"
+  Output_File: "layout"
+  Lookup_File: "layout"
+  Join: "select"
+  Rollup: "select"
+  Filter: "where"
+  Sort: "key"
+  Reformat: "select"
+  Normalize: "normalize_spec"
+  Denormalize: "normalize_spec"
+
+# Component type identification
+PROTOTYPE_PATH_PARAM: "!prototype_path"
+
+# Subgraph tracking
+SUBGRAPH_SEPARATOR: "."
+SUBGRAPH_EXCLUDE: ["@@@1"]
