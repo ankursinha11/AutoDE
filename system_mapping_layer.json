@@ -1,0 +1,169 @@
+{
+  "hadoop_to_databricks": {
+    "cdd: bcs_permid_swift": [
+      "pl_cdd_es_prebdf"
+    ],
+    "cdd: bdf_download": [
+      "pl_cdd_bdf_download",
+      "pl_cdd_bdf_download_checkfile",
+      "pl_chc_bdf_download"
+    ],
+    "cdd: es-swift-postbdf": [
+      "pl_cdd_es_postbdf"
+    ],
+    "IE-PREBDF": [
+      "pl_cdd_ie_prebdf"
+    ],
+    "cdd: ie-postbdf": [
+      "pl_cdd_ie_postbdf"
+    ],
+    "TU-PREBDF": [
+      "pl_tu_prebdf"
+    ],
+    "cdd: family_clustering": [
+      "pl_leadrepository_xref_famc"
+    ],
+    "escan_coverage_helper : > build repo": [
+      "pl_mbihelper"
+    ],
+    "escan_data_ingestion : sqoop_fnf": [
+      "pl_dataingestion_fnf"
+    ],
+    "escan_data_ingestion : big_tables": [
+      "pl_dataingestion_big_tables"
+    ],
+    "escan_data_ingestion : ingest_all": [
+      "pl_dataingestion_abi_group1",
+      "pl_dataingestion_abi_group2"
+    ],
+    "escan_data_ingestion : chc": [
+      "pl_chc_import"
+    ],
+    "escan_data_ingestion : CHC_PERM_GMRN_ID_XREF": [
+      "pl_chc_xref"
+    ],
+    "escan_globalmrn : ghic": [
+      "pl_gmrn_ghic"
+    ],
+    "escan_globalmrn : merge": [
+      "pl_gmrn_merge\npl_gmrn_merge_sub"
+    ],
+    "leaddiscovery: leadlookup:": [
+      "pl_leaddiscovery_globalmrn_assign"
+    ],
+    "leaddiscovery: medicareleads": [
+      "pl_leaddiscovery_medicareleads"
+    ],
+    "leaddiscovery: medicaidleads": [
+      "pl_leaddiscovery_medicaidleads"
+    ],
+    "leaddiscovery: lead propagation": [
+      "pl_leaddiscovery_lead_propagation"
+    ],
+    "leaddiscovery: leadverify": [
+      "pl_leaddiscovery_leadverify"
+    ],
+    "subdob :data mining": [
+      "pl_leaddiscovery_subdob"
+    ],
+    "leaddiscovery:known_commercial": [
+      "pl_leaddiscovery_known_commercial"
+    ],
+    "lead\u00a0discovery:\u00a0leadlookup:\u00a0knowncommercial": [
+      "pl_leaddiscovery_leadlookup_knowncommercial"
+    ],
+    "leadrepository : escan_import_fc": [
+      "pl_leadrepo_escan_import_fc"
+    ],
+    "leadrepository : famc_xref_table_update": [
+      "pl_leadrepository_xref_famc"
+    ],
+    "leadrepository : ich_import_parse": [
+      "pl_leadrepo_escan_ich_import"
+    ],
+    "lead\u00a0repository:\u00a0xref": [
+      "pl_leadrepository_xref",
+      "pl_ich_xref",
+      "pl_fc_xref",
+      "pl_globalmrn_xref"
+    ],
+    "leadservicebase : lead gen and update : chc": [
+      "pl_leadservicebase_chc"
+    ],
+    "leadservicebase : lead gen and update": [
+      "pl_leadservicebase",
+      "pl_leadservicebase_gmrnmerge"
+    ],
+    "process-hints": [
+      "pl_hintsdiscovery_commercial"
+    ]
+  },
+  "abinitio_to_databricks": {
+    "100_commGenPrePrep.pset": [
+      "pl_leaddiscovery_globalmrn_assign",
+      "pl_leaddiscovery_lead_propagation",
+      "pl_leaddiscovery_leadverify",
+      "pl_leaddiscovery_known_commercial",
+      "pl_leaddiscovery_leadlookup_knowncommercial"
+    ],
+    "120_mcarePrePrep.pset": [
+      "pl_mbihelper\npl_leaddiscovery_medicareleads\npl_mh_import\npl_leadservicebase_mh"
+    ],
+    "1000_CDD_PrePrep.pset": [
+      "Pl_cdd_es_postbdf",
+      "pl_cdd_ie_postbdf",
+      "pl_leadrepo_escan_import_fc"
+    ],
+    "1100_CDD_Charlotte271Data.pset": [
+      "Pl_cdd_es_postbdf",
+      "pl_cdd_ie_postbdf",
+      "pl_leadrepo_escan_ich_import",
+      "pl_ich_xref",
+      "pl_leadservicebase"
+    ],
+    "1200_CDD_Charlotte271FamilyData.pset": [
+      "Pl_leadrepository_xref_famc",
+      "pl_leadservicebase_famc"
+    ],
+    "1300_CDD_PatientAcctsXRefPermID.pset": [
+      "pl_cdd_bdf_download"
+    ],
+    "1400_CDD_Charlotte271GMRNData.pset": [
+      "Pl_cdd_es_postbdf",
+      "pl_cdd_ie_postbdf",
+      "pl_leadrepo_escan_ich_import",
+      "pl_ich_xref",
+      "pl_leadservicebase"
+    ],
+    "1500_CDD_TUSourcedFamilyMemberLink.pset": [
+      "pl_TUSourcedFamilyMemberLink"
+    ],
+    "1600_CDD_HFC_FamilyFoundCoverage.pset": [
+      "Pl_leadrepository_xref_famc",
+      "pl_leadservicebase_famc"
+    ],
+    "1700_CDD_HFC_RelatedMemberOPSourcedFC.pset": [
+      "pl_leadrepo_escan_import_fc",
+      "pl_fc_xref",
+      "pl_leadservicebase"
+    ],
+    "1800_CDD_HFC_Charlotte271Data.pset": [
+      "pl_leadrepo_escan_import_fc",
+      "pl_fc_xref",
+      "pl_leadservicebase"
+    ],
+    "2000_CDD_LoadStagingAndCallSP.PatientAcctsXRefPermID.pset": [
+      "Load to HelperFoundCoverage similar to loading LSB in pl_leadservicebase"
+    ],
+    "2500_CDD_PropagateHFCForFamilyMembers.pset": [
+      "Pl_leadrepository_xref_famc",
+      "pl_leadservicebase_famc"
+    ],
+    "200_extractDataFromSqlToAbi.pset": [
+      "pl_dataingestion_fnf",
+      "pl_dataingestion_big_tables",
+      "pl_dataingestion_abi_group1",
+      "pl_dataingestion_abi_group2"
+    ]
+  }
+}
