@@ -108,6 +108,9 @@ class ChatOrchestrator:
         # Initialize STAG orchestrator for comprehensive comparisons
         self.stag_orchestrator = STAGOrchestrator(indexer=indexer, ai_analyzer=ai_analyzer)
 
+        # Context for pending user selections
+        self.pending_selection = None  # Stores context when waiting for user choice
+
         logger.info("ChatOrchestrator initialized with 5 specialized agents + LogicComparator + Codebase Copilot + Document Tools + STAG Orchestrator")
 
     def _read_actual_file_content(self, result: Dict[str, Any]) -> Optional[str]:
@@ -163,6 +166,11 @@ class ChatOrchestrator:
             StreamUpdate objects with thinking process and results
         """
         try:
+            # Check if there's a pending selection and user is responding with a number
+            if self.pending_selection and query.strip().isdigit():
+                yield from self._handle_user_selection(query, context)
+                return
+
             # Phase 1: Thinking - Analyze query
             yield StreamUpdate(
                 type=UpdateType.THINKING,
@@ -1114,7 +1122,6 @@ Found **{len(sttm_mappings)} field mappings**
         )
 
         search_query = ' '.join(entities[:3]) if entities else query
-        system_name = systems[0] if systems else "databricks"
 
         # Map system to collection
         system_to_collection = {
@@ -1122,6 +1129,39 @@ Found **{len(sttm_mappings)} field mappings**
             "hadoop": "hadoop_collection",
             "databricks": "databricks_collection"
         }
+
+        # If no system specified, try to infer from query or ask user
+        if not systems:
+            # Try intelligent detection
+            query_lower = query.lower()
+            if any(kw in query_lower for kw in ['pig', 'hive', 'oozie', 'hdfs', 'mapreduce']):
+                system_name = "hadoop"
+                yield StreamUpdate(
+                    type=UpdateType.THINKING,
+                    content="💡 No system specified, but detected Hadoop keywords - assuming Hadoop"
+                )
+            elif any(kw in query_lower for kw in ['graph', '.mp', 'dml', 'xfr', 'component']):
+                system_name = "abinitio"
+                yield StreamUpdate(
+                    type=UpdateType.THINKING,
+                    content="💡 No system specified, but detected Ab Initio keywords - assuming Ab Initio"
+                )
+            elif any(kw in query_lower for kw in ['notebook', 'delta', 'spark', 'pipeline', 'adf']):
+                system_name = "databricks"
+                yield StreamUpdate(
+                    type=UpdateType.THINKING,
+                    content="💡 No system specified, but detected Databricks keywords - assuming Databricks"
+                )
+            else:
+                # Cannot determine - ask user or search all
+                system_name = "databricks"  # Default
+                yield StreamUpdate(
+                    type=UpdateType.THINKING,
+                    content="⚠️ System not specified in query. Searching Databricks first. Tip: Include 'hadoop', 'databricks', or 'abinitio' for better results."
+                )
+        else:
+            system_name = systems[0]
+
         collection = system_to_collection.get(system_name.lower(), "databricks_collection")
 
         logger.info(f"Searching for {search_query} in {collection}")
@@ -1707,6 +1747,269 @@ Use these queries to validate the comparison results:
 
         return summary
 
+    def _generate_stag_response(
+        self,
+        result: Dict[str, Any],
+        source_system: str,
+        source_workflow: str,
+        classified = None
+    ) -> Generator[StreamUpdate, None, None]:
+        """Generate comprehensive STAG comparison response with inline details"""
+
+        # Success - stream progress updates
+        yield StreamUpdate(
+            type=UpdateType.TASK_COMPLETE,
+            content=f"✅ Mapping found: {source_workflow} → {result['databricks_pipeline']}"
+        )
+
+        yield StreamUpdate(
+            type=UpdateType.TASK_COMPLETE,
+            content=f"✅ Extracted logic from both systems (AI-powered)"
+        )
+
+        yield StreamUpdate(
+            type=UpdateType.TASK_COMPLETE,
+            content=f"✅ Generated {len(result['business_stages'])} business stages (AI)"
+        )
+
+        yield StreamUpdate(
+            type=UpdateType.TASK_COMPLETE,
+            content=f"✅ Generated {result['sttm_count']} column mappings (AI)"
+        )
+
+        yield StreamUpdate(
+            type=UpdateType.TASK_COMPLETE,
+            content=f"✅ Created comprehensive Excel comparison report"
+        )
+
+        # Build final answer with detailed sheet descriptions
+        # Normalize path for display (use forward slashes)
+        display_path = result['excel_file'].replace('\\', '/')
+
+        # Extract just the filename for download link
+        import os
+        filename = os.path.basename(result['excel_file'])
+
+        answer = f"""## 📊 STAG Comparison Report Generated Successfully!
+
+**Source System:** {source_system.upper()}
+**Source Workflow:** `{source_workflow}`
+**Databricks Pipeline:** `{result['databricks_pipeline']}`
+
+---
+
+### 📄 Excel Report Details
+
+**📥 Download:** [{filename}]({display_path})
+
+**Location:** `{display_path}`
+
+The comprehensive Excel workbook contains **5 detailed sheets**:
+
+#### 1. Overview Sheet 📊
+- High-level business stage comparison
+- **Color-coded cells**:
+  - 🟢 Green = Similar implementation
+  - 🔴 Red = Different/Missing
+  - 🟡 Yellow = Partial match
+- Migration complexity assessment
+- Executive summary of changes required
+
+#### 2. Databricks Logic Sheet ⚡
+- Complete Databricks pipeline activities breakdown
+- Activity types (Notebook, Copy Data, Execute Pipeline, etc.)
+- Input/output datasets for each activity
+- Linked service connections
+- Parameters and configurations
+
+#### 3. {source_system.capitalize()} Logic Sheet 📦
+- Complete source system jobs/components inventory
+- Execution flow and dependencies
+- Scripts and transformations used
+- Input/output tables and files
+- Job parameters and configurations
+
+#### 4. Logic Comparison Sheet 🔄
+- **Side-by-side comparison** of transformation logic
+- Source transformation vs Databricks equivalent
+- Identified differences with explanations
+- Logic complexity comparison
+- Recommended migration approach for each transformation
+
+#### 5. STTM (Source-to-Target Mapping) Sheet 🔗
+- **Column-level mappings** from source to target
+- Data type conversions
+- Transformation logic for each column
+- Dependencies and derivations
+- Confidence scores for each mapping
+
+---
+
+### 📈 Analysis Summary
+
+- **Business Stages Identified:** {len(result['business_stages'])}
+- **Column Mappings (STTM):** {result['sttm_count']}
+- **Logic Differences:** {result['differences_count']}
+
+{f"⚠️ **Note:** {result['sttm_count']} STTM mappings were generated. If this is 0, the workflows may not have schema information indexed. Consider re-indexing with deep parsing enabled." if result['sttm_count'] == 0 else ""}
+
+---
+"""
+
+        # Always add business stage analysis inline (user requirement)
+        if len(result['business_stages']) > 0:
+            answer += f"""
+
+### 🎯 Business Stage Comparison
+
+| # | Business Stage | {source_system.capitalize()} | Databricks | Status |
+|---|---|---|---|---|
+"""
+            for i, stage in enumerate(result['business_stages'][:8], 1):  # Show first 8
+                comparison = stage.get('comparison', 'Unknown')
+                emoji = "✅ Similar" if comparison == "Similar" else "⚠️ Different" if comparison == "Different" else "❓ Unknown"
+                stage_name = stage.get('stage_name', 'Unknown')[:40]  # Truncate long names
+                source_desc = stage.get('source_description', 'N/A')[:60]
+                db_desc = stage.get('databricks_description', 'N/A')[:60]
+
+                answer += f"| {i} | {stage_name} | {source_desc} | {db_desc} | {emoji} |\n"
+
+            if len(result['business_stages']) > 8:
+                answer += f"\n*Showing 8 of {len(result['business_stages'])} business stages. See Excel file for complete analysis.*\n"
+
+            answer += "\n---\n"
+
+        # Always try to show STTM sample (user requirement)
+        # Try to read from Excel if available
+        if result['sttm_count'] > 0:
+            sttm_sample = self._extract_sttm_sample_from_excel(result['excel_file'])
+
+            if sttm_sample:
+                answer += f"""
+
+### 🔗 Sample Column Mappings (First {min(5, len(sttm_sample))} of {result['sttm_count']})
+
+| Source Column | Target Column | Transformation | Data Type |
+|---|---|---|---|
+"""
+                for mapping in sttm_sample[:5]:
+                    answer += f"| {mapping.get('source', 'N/A')} | {mapping.get('target', 'N/A')} | {mapping.get('transformation', 'Direct')[:40]} | {mapping.get('data_type', 'N/A')} |\n"
+
+                answer += f"\n*See Excel STTM sheet for all {result['sttm_count']} column mappings with complete transformation logic.*\n\n---\n"
+
+        # Final answer
+        yield StreamUpdate(
+            type=UpdateType.FINAL_ANSWER,
+            content=answer
+        )
+
+    def _extract_sttm_sample_from_excel(self, excel_path: str) -> List[Dict[str, Any]]:
+        """Extract sample STTM mappings from Excel file"""
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(excel_path, read_only=True)
+
+            if 'STTM' not in wb.sheetnames:
+                return []
+
+            ws = wb['STTM']
+            sttm_sample = []
+
+            # Read header row to find column indices
+            headers = {}
+            for col_idx, cell in enumerate(ws[1], 1):
+                if cell.value:
+                    headers[cell.value.lower()] = col_idx
+
+            # Read first 5 data rows
+            for row_idx in range(2, min(7, ws.max_row + 1)):
+                row = ws[row_idx]
+                mapping = {
+                    'source': row[headers.get('source column', 0)].value if 'source column' in headers else 'N/A',
+                    'target': row[headers.get('target column', 0)].value if 'target column' in headers else 'N/A',
+                    'transformation': row[headers.get('transformation logic', 0)].value if 'transformation logic' in headers else 'Direct',
+                    'data_type': row[headers.get('data type', 0)].value if 'data type' in headers else 'N/A'
+                }
+                sttm_sample.append(mapping)
+
+            wb.close()
+            return sttm_sample
+
+        except Exception as e:
+            logger.warning(f"Could not extract STTM sample from Excel: {e}")
+            return []
+
+    def _handle_user_selection(
+        self,
+        query: str,
+        context: Optional[Dict]
+    ) -> Generator[StreamUpdate, None, None]:
+        """Handle user's numeric selection from multiple options"""
+        try:
+            selection_num = int(query.strip())
+            pending = self.pending_selection
+
+            if pending['type'] == 'stag_workflow_selection':
+                matches = pending['matches']
+
+                # Validate selection
+                if selection_num < 1 or selection_num > len(matches):
+                    yield StreamUpdate(
+                        type=UpdateType.ERROR,
+                        content=f"❌ Invalid selection. Please choose a number between 1 and {len(matches)}."
+                    )
+                    return
+
+                # Get selected workflow
+                selected = matches[selection_num - 1]
+                selected_workflow = selected['name']
+
+                yield StreamUpdate(
+                    type=UpdateType.THINKING,
+                    content=f"✅ Selected: **{selected_workflow}** (confidence: {selected['confidence']:.0%})"
+                )
+
+                # Clear pending selection
+                source_system = pending['source_system']
+                source_workflow = pending['source_workflow']
+                self.pending_selection = None
+
+                # Continue with STAG comparison using selected workflow
+                yield StreamUpdate(
+                    type=UpdateType.TASK_START,
+                    content="Generating STAG comparison with selected workflow..."
+                )
+
+                result = self.stag_orchestrator.generate_comparison(
+                    source_system=source_system,
+                    source_workflow=source_workflow,
+                    databricks_pipeline=selected_workflow  # Use selected workflow
+                )
+
+                # Process result (same as normal STAG flow)
+                if not result['success']:
+                    error_msg = ', '.join(result['errors']) if result['errors'] else 'Unknown error'
+                    yield StreamUpdate(
+                        type=UpdateType.ERROR,
+                        content=f"❌ STAG comparison failed: {error_msg}"
+                    )
+                    return
+
+                # Continue with normal STAG response generation
+                yield from self._generate_stag_response(result, source_system, source_workflow, classified=None)
+
+        except ValueError:
+            yield StreamUpdate(
+                type=UpdateType.ERROR,
+                content=f"❌ Invalid input. Please enter a number."
+            )
+        except Exception as e:
+            logger.error(f"Error handling user selection: {e}")
+            yield StreamUpdate(
+                type=UpdateType.ERROR,
+                content=f"❌ Error processing selection: {str(e)}"
+            )
+
     def _handle_stag_comparison(
         self,
         query: str,
@@ -1802,6 +2105,30 @@ If you cannot determine the workflow, set confidence to 0.0.
                 source_workflow=source_workflow
             )
 
+            # Check for multiple matches requiring user selection
+            if result.get('status') == 'multiple_matches':
+                matches = result.get('matches', [])
+
+                # Store pending selection context
+                self.pending_selection = {
+                    'type': 'stag_workflow_selection',
+                    'source_system': source_system,
+                    'source_workflow': source_workflow,
+                    'matches': matches
+                }
+
+                # Build user-friendly match list
+                match_list = "\n".join([
+                    f"{i+1}. **{m['name']}** (confidence: {m['confidence']:.0%})\n   - {m.get('reason', 'Similar workflow')}"
+                    for i, m in enumerate(matches)
+                ])
+
+                yield StreamUpdate(
+                    type=UpdateType.THINKING,
+                    content=f"🔍 Found {len(matches)} potential Databricks workflows for `{source_workflow}`:\n\n{match_list}\n\n**Please select which workflow to compare:**\nType the number (1-{len(matches)}) of your choice."
+                )
+                return  # Wait for user to select
+
             if not result['success']:
                 error_msg = ', '.join(result['errors']) if result['errors'] else 'Unknown error'
                 yield StreamUpdate(
@@ -1810,164 +2137,8 @@ If you cannot determine the workflow, set confidence to 0.0.
                 )
                 return
 
-            # Success - stream progress updates
-            yield StreamUpdate(
-                type=UpdateType.TASK_COMPLETE,
-                content=f"✅ Mapping found: {source_workflow} → {result['databricks_pipeline']}"
-            )
-
-            yield StreamUpdate(
-                type=UpdateType.TASK_COMPLETE,
-                content=f"✅ Extracted logic from both systems"
-            )
-
-            yield StreamUpdate(
-                type=UpdateType.TASK_COMPLETE,
-                content=f"✅ Generated {len(result['business_stages'])} business stages (AI)"
-            )
-
-            yield StreamUpdate(
-                type=UpdateType.TASK_COMPLETE,
-                content=f"✅ Generated {result['sttm_count']} column mappings (AI)"
-            )
-
-            yield StreamUpdate(
-                type=UpdateType.TASK_COMPLETE,
-                content=f"✅ Created comprehensive Excel comparison report"
-            )
-
-            # Build final answer with detailed sheet descriptions
-            # Normalize path for display (use forward slashes)
-            display_path = result['excel_file'].replace('\\', '/')
-
-            # Extract just the filename for download link
-            import os
-            filename = os.path.basename(result['excel_file'])
-
-            answer = f"""## 📊 STAG Comparison Report Generated Successfully!
-
-**Source System:** {source_system.upper()}
-**Source Workflow:** `{source_workflow}`
-**Databricks Pipeline:** `{result['databricks_pipeline']}`
-
----
-
-### 📄 Excel Report Details
-
-**📥 Download:** [{filename}]({display_path})
-
-**Location:** `{display_path}`
-
-The comprehensive Excel workbook contains **5 detailed sheets**:
-
-#### 1. Overview Sheet 📊
-- High-level business stage comparison
-- **Color-coded cells**:
-  - 🟢 Green = Similar implementation
-  - 🔴 Red = Different/Missing
-  - 🟡 Yellow = Partial match
-- Migration complexity assessment
-- Executive summary of changes required
-
-#### 2. Databricks Logic Sheet ⚡
-- Complete Databricks pipeline activities breakdown
-- Activity types (Notebook, Copy Data, Execute Pipeline, etc.)
-- Input/output datasets for each activity
-- Linked service connections
-- Parameters and configurations
-
-#### 3. {source_system.capitalize()} Logic Sheet 📦
-- Complete source system jobs/components inventory
-- Execution flow and dependencies
-- Scripts and transformations used
-- Input/output tables and files
-- Job parameters and configurations
-
-#### 4. Logic Comparison Sheet 🔄
-- **Side-by-side comparison** of transformation logic
-- Source transformation vs Databricks equivalent
-- Identified differences with explanations
-- Logic complexity comparison
-- Recommended migration approach for each transformation
-
-#### 5. STTM (Source-to-Target Mapping) Sheet 🔗
-- **Column-level mappings** from source to target
-- Data type conversions
-- Transformation logic for each column
-- Dependencies and derivations
-- Confidence scores for each mapping
-
----
-
-### 📈 Analysis Summary
-
-- **Business Stages Identified:** {len(result['business_stages'])}
-- **Column Mappings (STTM):** {result['sttm_count']}
-- **Logic Differences:** {result['differences_count']}
-
-{f"⚠️ **Note:** {result['sttm_count']} STTM mappings were generated. If this is 0, the workflows may not have schema information indexed. Consider re-indexing with deep parsing enabled." if result['sttm_count'] == 0 else ""}
-
----
-"""
-
-            # If multi-intent includes COMPARISON or LOGIC_ANALYSIS, add business stage details
-            if (QueryIntent.COMPARISON in classified.secondary_intents or
-                QueryIntent.LOGIC_ANALYSIS in classified.secondary_intents or
-                any(kw in query.lower() for kw in ['explain', 'what are', 'show me', 'describe'])):
-
-                answer += f"""
-
-### 🎯 Business Stage Analysis
-
-The following business stages were identified:
-
-"""
-                for i, stage in enumerate(result['business_stages'][:10], 1):  # Limit to 10 stages
-                    comparison = stage.get('comparison', 'Unknown')
-                    emoji = "✅" if comparison == "Similar" else "⚠️" if comparison == "Different" else "❓"
-
-                    answer += f"""**{i}. {stage.get('stage_name', 'Unknown Stage')}** {emoji} ({comparison})
-
-**{source_system.capitalize()}:** {stage.get('source_description', 'N/A')}
-
-**Databricks:** {stage.get('databricks_description', 'N/A')}
-
-**Notes:** {stage.get('notes', 'No additional notes')}
-
----
-
-"""
-
-                if len(result['business_stages']) > 10:
-                    answer += f"\n*Showing 10 of {len(result['business_stages'])} business stages. See Excel file for complete analysis.*\n"
-
-            # If multi-intent includes LINEAGE or STTM keywords, add STTM sample
-            if (QueryIntent.LINEAGE in classified.secondary_intents or
-                any(kw in query.lower() for kw in ['sttm', 'mapping', 'column', 'lineage'])):
-
-                # Read STTM from orchestrator result (if available in business logic)
-                answer += f"""
-
-### 🔗 Sample Column Mappings (STTM)
-
-Showing first 5 column mappings (see Excel for complete {result['sttm_count']} mappings):
-
-"""
-                # Note: STTM data not directly returned in result, recommend checking Excel
-                answer += f"*Complete STTM with transformation logic available in Excel Sheet 5*\n"
-
-            yield StreamUpdate(
-                type=UpdateType.FINAL_ANSWER,
-                content=answer,
-                data={
-                    "excel_file": result['excel_file'],
-                    "source_workflow": source_workflow,
-                    "databricks_pipeline": result['databricks_pipeline'],
-                    "business_stages_count": len(result['business_stages']),
-                    "sttm_count": result['sttm_count'],
-                    "differences_count": result['differences_count']
-                }
-            )
+            # Use new consolidated response generation method
+            yield from self._generate_stag_response(result, source_system, source_workflow, classified)
 
         except Exception as e:
             logger.error(f"Error in STAG comparison handler: {e}")
