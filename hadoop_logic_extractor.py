@@ -119,7 +119,13 @@ class HadoopLogicExtractor:
 
     def _find_all_scripts(self, workflow_name: str) -> List[str]:
         """
-        Find ALL script files referenced in workflow
+        Find ALL script files referenced in workflow - ENHANCED to find shell/python scripts
+
+        Handles multiple Oozie XML patterns:
+        - Pig scripts: <script>merge_swift.pig</script>
+        - Shell scripts (simple): <exec>get_datetime.sh</exec>
+        - Shell scripts (bash -c): <exec>bash</exec><argument>${appPath}/get_bdf.sh</argument>
+        - Python/Spark scripts: <jar>${appPath}/log_notification.py</jar>
 
         Returns:
             List of script file names (e.g., ['get_bdf.sh', 'process_bdf.sh', 'merge_swift.pig', ...])
@@ -140,49 +146,135 @@ class HadoopLogicExtractor:
 
             if not workflow_docs:
                 logger.warning(f"   No workflow definition found for {workflow_name}")
-                return []
+                # Fallback: Try direct file system search
+                return self._scan_script_directory(workflow_name)
 
             # Extract script references from ALL workflow documents
             scripts = set()  # Use set to avoid duplicates
             for doc in workflow_docs:
                 content = doc.get('content', '')
 
-                # Pattern 1: <script>path/to/script.sh</script>
+                # Pattern 1: Pig <script> tags (most common)
+                # Example: <script>merge_swift.pig</script>
                 script_matches = re.findall(r'<script[^>]*>([^<]+)</script>', content, re.IGNORECASE)
                 scripts.update([s.split('/')[-1].strip() for s in script_matches if s.strip()])
 
-                # Pattern 2: pig -f script.pig
+                # Pattern 2: Shell <exec> tags (simple form)
+                # Example: <exec>get_datetime.sh</exec>
+                exec_matches = re.findall(r'<exec>([^<]+\.sh)</exec>', content, re.IGNORECASE)
+                scripts.update([s.split('/')[-1].strip() for s in exec_matches])
+
+                # Pattern 3: Shell scripts via bash -c with <argument> tags
+                # Example: <exec>bash</exec><argument>-c</argument><argument>${appPath}/get_bdf.sh</argument>
+                bash_argument_pattern = r'<exec>(?:bash|/bin/bash)</exec>.*?<argument>-c</argument>.*?<argument>([^<]+)</argument>'
+                bash_matches = re.findall(bash_argument_pattern, content, re.DOTALL | re.IGNORECASE)
+                for match in bash_matches:
+                    # Extract script name from ${appPath}/script.sh or full path
+                    script_path = match.replace('${appPath}/', '').strip()
+                    # Split by space to handle arguments like "audit_bdf_swift.sh ${date} es_swift"
+                    script_name = script_path.split()[0]
+                    if script_name.endswith('.sh'):
+                        scripts.add(script_name)
+
+                # Pattern 4: Python/Spark scripts in <jar> tags
+                # Example: <jar>${appPath}/log_notification.py</jar>
+                jar_python_pattern = r'<jar>([^<]+\.py)</jar>'
+                python_matches = re.findall(jar_python_pattern, content, re.IGNORECASE)
+                for match in python_matches:
+                    script_name = match.replace('${appPath}/', '').strip()
+                    scripts.add(script_name)
+
+                # Pattern 5: pig -f command line
                 pig_matches = re.findall(r'pig\s+-f\s+([^\s]+\.pig)', content, re.IGNORECASE)
                 scripts.update([s.split('/')[-1].strip() for s in pig_matches])
 
-                # Pattern 3: hive -f script.hql
+                # Pattern 6: hive -f script.hql
                 hive_matches = re.findall(r'hive\s+-f\s+([^\s]+\.hql)', content, re.IGNORECASE)
                 scripts.update([s.split('/')[-1].strip() for s in hive_matches])
 
-                # Pattern 4: python script.py
+                # Pattern 7: python command line
                 python_matches = re.findall(r'python\s+([^\s]+\.py)', content, re.IGNORECASE)
                 scripts.update([s.split('/')[-1].strip() for s in python_matches])
 
-                # Pattern 5: bash/sh script.sh
-                shell_matches = re.findall(r'(?:bash|sh)\s+([^\s]+\.sh)', content, re.IGNORECASE)
-                scripts.update([s.split('/')[-1].strip() for s in shell_matches])
-
-                # Pattern 6: <name>script_name</name> in action elements
-                action_names = re.findall(r'<action[^>]*name="([^"]+)"', content, re.IGNORECASE)
-                for action in action_names:
-                    # Check if action name looks like a script name
-                    if any(ext in action.lower() for ext in ['.sh', '.pig', '.hql', '.py']):
-                        scripts.add(action.split('/')[-1].strip())
+            # Fallback: If we found very few scripts, scan file system directly
+            if len(scripts) < 5:
+                logger.warning(f"   ⚠ Only {len(scripts)} scripts found via patterns - trying direct scan")
+                filesystem_scripts = self._scan_script_directory(workflow_name)
+                scripts.update(filesystem_scripts)
 
             # Convert to sorted list
             unique_scripts = sorted([s for s in scripts if s])
 
             logger.info(f"   ✅ Found {len(unique_scripts)} unique scripts in {workflow_name}")
+            for script in unique_scripts:
+                logger.info(f"      - {script}")
             return unique_scripts
 
         except Exception as e:
             logger.error(f"   ❌ Failed to find scripts: {e}")
-            return []
+            # Fallback to direct scan
+            return self._scan_script_directory(workflow_name)
+
+    def _scan_script_directory(self, workflow_name: str) -> List[str]:
+        """
+        Fallback method: Scan file system directly for scripts in workflow directory
+
+        This is used when:
+        1. Vector DB search fails to find workflow.xml
+        2. XML pattern matching finds very few scripts
+        3. Workflow XML has non-standard script references
+
+        Scans: hadoop_repos/hadoop_repos/app-cdd/oozie/{workflow_name}/
+        """
+        scripts = set()
+
+        # Clean workflow name (remove "cdd: " prefix if present)
+        clean_workflow = workflow_name.replace('cdd: ', '').replace('cdd:', '').strip()
+
+        # Possible base paths
+        base_paths = [
+            f"/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/hadoop_repos/hadoop_repos/app-cdd/oozie/{clean_workflow}",
+            f"/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/hadoop_repos/hadoop_repos/app-cdd/oozie/{workflow_name}",
+            # Also check parent directories for common scripts
+            f"/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/hadoop_repos/hadoop_repos/app-cdd/pig/es",
+            f"/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/hadoop_repos/hadoop_repos/app-cdd/pig/ie",
+        ]
+
+        import glob
+        from pathlib import Path
+
+        for base_path in base_paths:
+            if not Path(base_path).exists():
+                continue
+
+            logger.info(f"      🔍 Scanning directory: {base_path}")
+
+            # Find all script files
+            for ext in ['*.pig', '*.sh', '*.py', '*.hql', '*.sql']:
+                pattern = f"{base_path}/{ext}"
+                matches = glob.glob(pattern)
+
+                for match in matches:
+                    script_name = Path(match).name
+                    scripts.add(script_name)
+                    logger.info(f"         Found: {script_name}")
+
+            # Also check subdirectories (1 level deep)
+            for ext in ['*.pig', '*.sh', '*.py', '*.hql', '*.sql']:
+                pattern = f"{base_path}/*/{ext}"
+                matches = glob.glob(pattern)
+
+                for match in matches:
+                    script_name = Path(match).name
+                    scripts.add(script_name)
+                    logger.info(f"         Found: {script_name}")
+
+        if scripts:
+            logger.info(f"      ✅ File system scan found {len(scripts)} scripts")
+        else:
+            logger.warning(f"      ⚠ File system scan found no scripts in expected locations")
+
+        return sorted(list(scripts))
 
     def _analyze_script_deeply(self, script_name: str, workflow_name: str) -> Optional[Dict[str, Any]]:
         """
@@ -351,7 +443,32 @@ CRITICAL REQUIREMENTS:
             script_analysis = self._parse_ai_response_to_script(ai_response)
 
             if script_analysis and script_analysis.get('step_by_step_logic'):
+                # CRITICAL: Always extract outputs from script content (don't rely solely on AI)
+                # This ensures STTM has real table names for comparison
+                actual_outputs = self._extract_outputs_from_content(script_content)
+
+                # If AI didn't provide outputs or provided fewer than actual, use actual
+                ai_outputs = script_analysis.get('outputs', [])
+                if not ai_outputs or len(actual_outputs) > len(ai_outputs):
+                    logger.info(f"      ✅ Overriding AI outputs with actual: {actual_outputs}")
+                    script_analysis['outputs'] = actual_outputs
+                else:
+                    # Merge both (AI might have found additional context)
+                    combined_outputs = list(set(ai_outputs + actual_outputs))
+                    script_analysis['outputs'] = combined_outputs
+
+                # Same for inputs
+                actual_inputs = self._extract_inputs_from_content(script_content)
+                ai_inputs = script_analysis.get('inputs', [])
+                if not ai_inputs or len(actual_inputs) > len(ai_inputs):
+                    logger.info(f"      ✅ Overriding AI inputs with actual: {actual_inputs}")
+                    script_analysis['inputs'] = actual_inputs
+                else:
+                    combined_inputs = list(set(ai_inputs + actual_inputs))
+                    script_analysis['inputs'] = combined_inputs
+
                 logger.info(f"      ✅ Deep analysis complete: {len(script_analysis.get('step_by_step_logic', []))} steps, {len(script_analysis.get('code_snippets', []))} snippets")
+                logger.info(f"      📊 Tables: {len(script_analysis.get('inputs', []))} inputs, {len(script_analysis.get('outputs', []))} outputs")
                 return script_analysis
             else:
                 logger.warning(f"      ⚠ AI analysis incomplete for {script_name}")

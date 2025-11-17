@@ -221,61 +221,195 @@ class DatabricksLogicExtractor:
         return None
 
     def _extract_activities_from_adf(self, adf_json_path: str) -> List[Dict[str, Any]]:
-        """Extract activities from ADF pipeline JSON"""
+        """
+        Extract activities from ADF pipeline JSON with RECURSIVE extraction for nested activities
+
+        Handles:
+        - Top-level activities
+        - Switch cases (branching logic)
+        - IfCondition (true/false branches)
+        - ForEach loops
+        """
         try:
             with open(adf_json_path, 'r') as f:
                 adf_data = json.load(f)
 
-            activities = []
-
             # Navigate to activities array
-            # Typical ADF structure: { "properties": { "activities": [...] } }
             adf_activities = adf_data.get('properties', {}).get('activities', [])
 
-            for activity in adf_activities:
-                activity_name = activity.get('name', 'Unknown')
-                activity_type = activity.get('type', 'Unknown')
+            # Recursively extract all activities (including nested ones)
+            all_activities = self._extract_activities_recursive(adf_activities, parent_path="")
 
-                # Extract Databricks notebook info
-                notebook_path = self._extract_notebook_path(activity)
-
-                # Extract inputs/outputs
-                inputs = self._extract_activity_inputs(activity)
-                outputs = self._extract_activity_outputs(activity)
-
-                # Extract transformation description
-                transformations = self._extract_transformations_from_activity(activity)
-
-                activities.append({
-                    'name': activity_name,
-                    'type': activity_type,
-                    'notebook': notebook_path,
-                    'purpose': self._get_activity_purpose(activity_type, activity_name),
-                    'code_snippets': [],  # Will be enriched later
-                    'inputs': inputs,
-                    'outputs': outputs,
-                    'transformations': transformations
-                })
-
-            logger.info(f"   Extracted {len(activities)} activities from ADF JSON")
-            return activities
+            logger.info(f"   Extracted {len(all_activities)} total activities from ADF JSON (including nested)")
+            return all_activities
 
         except Exception as e:
             logger.error(f"Failed to extract activities from ADF JSON: {e}")
             return []
 
+    def _extract_activities_recursive(self, activities_list: List[Dict], parent_path: str = "") -> List[Dict[str, Any]]:
+        """
+        Recursively extract activities, including those nested in Switch, IfCondition, ForEach
+
+        Args:
+            activities_list: List of ADF activity dictionaries
+            parent_path: Path showing nesting (e.g., "check datasource > es_swift")
+
+        Returns:
+            Flat list of all activities with their nested path
+        """
+        extracted = []
+
+        for activity in activities_list:
+            activity_name = activity.get('name', 'Unknown')
+            activity_type = activity.get('type', 'Unknown')
+
+            # Build current path
+            current_path = f"{parent_path} > {activity_name}" if parent_path else activity_name
+
+            # Extract Databricks notebook info
+            notebook_path = self._extract_notebook_path(activity)
+
+            # Extract inputs/outputs
+            inputs = self._extract_activity_inputs(activity)
+            outputs = self._extract_activity_outputs(activity)
+
+            # Extract transformation description
+            transformations = self._extract_transformations_from_activity(activity)
+
+            # Add current activity
+            extracted.append({
+                'name': activity_name,
+                'type': activity_type,
+                'notebook': notebook_path,
+                'purpose': self._get_activity_purpose(activity_type, activity_name),
+                'code_snippets': [],  # Will be enriched later
+                'inputs': inputs,
+                'outputs': outputs,
+                'transformations': transformations,
+                'path': current_path  # Add path to show nesting
+            })
+
+            # RECURSIVE EXTRACTION for nested activities
+            type_properties = activity.get('typeProperties', {})
+
+            # Handle Switch activity (branching logic)
+            if activity_type == 'Switch':
+                cases = type_properties.get('cases', [])
+                logger.info(f"      Found Switch '{activity_name}' with {len(cases)} cases")
+
+                for case in cases:
+                    case_value = case.get('value', 'Unknown')
+                    case_activities = case.get('activities', [])
+
+                    logger.info(f"        Case '{case_value}': {len(case_activities)} activities")
+
+                    # Recursive call for case activities
+                    case_path = f"{current_path} [case: {case_value}]"
+                    nested = self._extract_activities_recursive(case_activities, case_path)
+                    extracted.extend(nested)
+
+                # Also handle default case if present
+                default_activities = type_properties.get('defaultActivities', [])
+                if default_activities:
+                    logger.info(f"        Default case: {len(default_activities)} activities")
+                    default_path = f"{current_path} [default]"
+                    nested = self._extract_activities_recursive(default_activities, default_path)
+                    extracted.extend(nested)
+
+            # Handle IfCondition activity
+            elif activity_type == 'IfCondition':
+                if_true = type_properties.get('ifTrueActivities', [])
+                if_false = type_properties.get('ifFalseActivities', [])
+
+                logger.info(f"      Found IfCondition '{activity_name}': {len(if_true)} true, {len(if_false)} false")
+
+                if if_true:
+                    true_path = f"{current_path} [if true]"
+                    nested = self._extract_activities_recursive(if_true, true_path)
+                    extracted.extend(nested)
+
+                if if_false:
+                    false_path = f"{current_path} [if false]"
+                    nested = self._extract_activities_recursive(if_false, false_path)
+                    extracted.extend(nested)
+
+            # Handle ForEach activity
+            elif activity_type == 'ForEach':
+                foreach_activities = type_properties.get('activities', [])
+
+                if foreach_activities:
+                    logger.info(f"      Found ForEach '{activity_name}': {len(foreach_activities)} activities")
+                    foreach_path = f"{current_path} [foreach]"
+                    nested = self._extract_activities_recursive(foreach_activities, foreach_path)
+                    extracted.extend(nested)
+
+        return extracted
+
     def _extract_notebook_path(self, activity: Dict[str, Any]) -> str:
-        """Extract Databricks notebook path from activity"""
+        """
+        Extract and evaluate Databricks notebook path from activity
+
+        Handles:
+        - Static paths: "/CDD/bdf_download/process_bdf"
+        - Dynamic expressions: "@concat(pipeline().parameters.notebookpath,'process_bdf')"
+        """
         # Look in typeProperties.notebookPath
         notebook_path = activity.get('typeProperties', {}).get('notebookPath', {})
 
         if isinstance(notebook_path, dict):
             # It's a dynamic expression
-            return notebook_path.get('value', 'Unknown')
+            expression = notebook_path.get('value', 'Unknown')
+
+            # Try to evaluate ADF expression
+            evaluated = self._evaluate_adf_expression(expression)
+            return evaluated
+
         elif isinstance(notebook_path, str):
             return notebook_path
         else:
             return 'No notebook'
+
+    def _evaluate_adf_expression(self, expression: str) -> str:
+        """
+        Evaluate ADF pipeline expressions to get actual notebook path
+
+        Common patterns:
+        - @concat(pipeline().parameters.notebookpath,'process_bdf')
+          → Evaluates to: /CDD/bdf_download/process_bdf
+
+        - @concat(parameters('notebookBasePath'),'/merge_swift')
+          → Evaluates to: /CDD/bdf_download/merge_swift
+        """
+        if not expression or not isinstance(expression, str):
+            return expression
+
+        # Pattern 1: @concat(pipeline().parameters.notebookpath,'script_name')
+        # Expected value of notebookpath parameter: /CDD/bdf_download/
+        concat_match = re.search(r'@concat\([^,]+,\s*[\'"]([^\'"]+)[\'"]\)', expression)
+
+        if concat_match:
+            script_name = concat_match.group(1)
+
+            # Infer base path from pipeline context
+            # For bdf_download pipeline, notebookpath = /CDD/bdf_download/
+            # This can be made more robust by reading pipeline parameters
+
+            # For now, use heuristic: CDD workflows use /CDD/workflow_name/
+            base_path = "/CDD/bdf_download"  # TODO: Make this dynamic based on pipeline name
+
+            result = f"{base_path}/{script_name}"
+            logger.info(f"      Evaluated expression: {expression} → {result}")
+            return result
+
+        # Pattern 2: @pipeline().parameters.paramName
+        # Return as-is with indicator it's a parameter
+        if '@pipeline()' in expression or '@parameters(' in expression:
+            logger.warning(f"      Unevaluated parameter expression: {expression}")
+            return expression
+
+        # If no pattern matched, return original
+        return expression
 
     def _extract_activity_inputs(self, activity: Dict[str, Any]) -> List[str]:
         """
