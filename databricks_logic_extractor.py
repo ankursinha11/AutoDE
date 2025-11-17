@@ -140,8 +140,8 @@ class DatabricksLogicExtractor:
 
         # Known ADF pipeline base locations
         base_paths = [
-            "/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/Databricks_repo/app-insleads-adf/adf/pipeline",
-            "/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/Databricks_repo/*/adf/pipeline",
+            "./Databricks_repo/adf/pipeline",
+            "./CodebaseIntelligence/Databricks_repo/adf/pipeline",
         ]
 
         for base_path in base_paths:
@@ -1334,3 +1334,4 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("Note: Full functionality requires indexer and AI analyzer")
     print("=" * 80)
+
