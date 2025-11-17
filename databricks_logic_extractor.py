@@ -1674,6 +1674,7 @@ class DatabricksLogicExtractor:
                         activity['transformations'] = enriched_info.get('transformations', activity.get('transformations', []))
                         activity['inputs'] = enriched_info.get('inputs', activity.get('inputs', []))
                         activity['outputs'] = enriched_info.get('outputs', activity.get('outputs', []))
+                        activity['column_schemas'] = enriched_info.get('column_schemas', {})  # CRITICAL: Add column schemas!
                 else:
                     # Fallback to basic code snippet extraction
                     code_snippets = self._search_notebook_code(notebook_path)
