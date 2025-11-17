@@ -1525,14 +1525,95 @@ class DatabricksLogicExtractor:
             return []
 
     def _extract_notebook_logic_with_ai(self, notebook_docs: List[Dict[str, Any]], notebook_path: str) -> Optional[Dict[str, Any]]:
-        """Extract notebook logic using DEEP AI analysis with step-by-step breakdown"""
-        if not notebook_docs or not self.ai_analyzer or not self.ai_analyzer.enabled:
+        """
+        Extract notebook logic using FILE-FIRST approach with AI analysis
+
+        NEW ARCHITECTURE:
+        1. Get actual file path FIRST (deterministic)
+        2. Read full file content (single source of truth)
+        3. Extract column schemas via structural parsing (order-preserving)
+        4. Send to AI for semantic analysis (purpose, transformations)
+        5. Combine both results
+
+        This ensures:
+        - Column extraction always works (no metadata dependency)
+        - Single file read (efficient)
+        - Proper order of operations maintained
+        - File is the single source of truth
+        """
+
+        # STEP 1: Get actual file path FIRST (before any analysis)
+        actual_file_path = self._construct_file_path_from_notebook_path(notebook_path)
+
+        if not actual_file_path or not Path(actual_file_path).exists():
+            logger.warning(f"   ⚠ Cannot find file for {notebook_path}")
+            logger.warning(f"      Attempted path: {actual_file_path}")
+            logger.warning(f"      Falling back to vector DB content (column extraction will be skipped)")
+
+            # Fallback to vector DB content for AI analysis only
+            if notebook_docs and self.ai_analyzer and self.ai_analyzer.enabled:
+                combined_content = "\n\n".join([doc.get('content', '') for doc in notebook_docs])
+                return self._analyze_with_ai_only(combined_content, notebook_path)
+            return None
+
+        logger.debug(f"   ✅ Found file: {actual_file_path}")
+
+        # STEP 2: Read full file content (single source of truth)
+        try:
+            with open(actual_file_path, 'r', encoding='utf-8') as f:
+                full_content = f.read()
+        except Exception as e:
+            logger.error(f"   ❌ Failed to read file {actual_file_path}: {e}")
+            return None
+
+        # STEP 3: Extract column schemas FIRST (structural parsing - deterministic)
+        logger.debug(f"   📋 Extracting column schemas from {actual_file_path}")
+        column_schemas = self.extract_column_schemas_from_notebook(actual_file_path)
+
+        if column_schemas:
+            total_columns = sum(len(cols) for cols in column_schemas.values())
+            logger.info(f"   📋 Extracted {len(column_schemas)} table schemas with {total_columns} total columns")
+        else:
+            logger.warning(f"   ⚠ No column schemas extracted from {actual_file_path}")
+            column_schemas = {}
+
+        # STEP 4: Send to AI for semantic analysis (if available)
+        enriched_info = {
+            'column_schemas': column_schemas,  # Already have it!
+            'purpose': '',
+            'step_by_step_logic': [],
+            'transformations': [],
+            'inputs': [],
+            'outputs': [],
+            'code_snippets': []
+        }
+
+        if self.ai_analyzer and self.ai_analyzer.enabled:
+            logger.debug(f"   🤖 Sending to AI for semantic analysis...")
+            ai_result = self._analyze_with_ai_only(full_content, notebook_path)
+
+            if ai_result:
+                # Merge AI results with column schemas
+                enriched_info.update(ai_result)
+                enriched_info['column_schemas'] = column_schemas  # Ensure we keep structural parsing result
+
+                step_count = len(enriched_info.get('step_by_step_logic', []))
+                snippet_count = len(enriched_info.get('code_snippets', []))
+                logger.info(f"   ✅ AI extracted {step_count} steps, {snippet_count} snippets for {notebook_path}")
+        else:
+            logger.debug(f"   ⚠ No AI analyzer - using only structural column extraction")
+
+        return enriched_info
+
+    def _analyze_with_ai_only(self, content: str, notebook_path: str) -> Optional[Dict[str, Any]]:
+        """
+        Helper method: AI analysis only (no column extraction)
+        Used as fallback when file is not accessible
+        """
+        if not self.ai_analyzer or not self.ai_analyzer.enabled:
             return None
 
         try:
-            # Combine notebook content
-            combined_content = "\n\n".join([doc.get('content', '') for doc in notebook_docs])
-
             # Enhanced AI prompt for EXHAUSTIVE detail
             prompt = f"""
 Analyze this Databricks notebook in EXHAUSTIVE detail and extract comprehensive transformation logic.
@@ -1540,7 +1621,7 @@ Analyze this Databricks notebook in EXHAUSTIVE detail and extract comprehensive 
 Notebook Path: {notebook_path}
 
 Notebook Code:
-{combined_content[:100000]}
+{content[:100000]}
 
 Provide a COMPREHENSIVE analysis:
 
@@ -1597,7 +1678,7 @@ CRITICAL: Provide EXHAUSTIVE detail. Aim for 10-30 step-by-step logic items and 
 
             # Get AI response with larger content window
             ai_response = self.ai_analyzer.analyze_code(
-                code=combined_content[:100000],  # Increased from 50000 to 100000 for complete notebook analysis
+                code=content[:100000],  # Increased from 50000 to 100000 for complete notebook analysis
                 context=prompt,
                 analysis_type="deep_notebook_analysis"
             )
@@ -1617,39 +1698,67 @@ CRITICAL: Provide EXHAUSTIVE detail. Aim for 10-30 step-by-step logic items and 
                         logger.warning("   No JSON found in AI response")
                         return None
 
-                enriched_info = json.loads(json_str)
-                step_count = len(enriched_info.get('step_by_step_logic', []))
-                snippet_count = len(enriched_info.get('code_snippets', []))
-                logger.info(f"   ✅ AI extracted {step_count} steps, {snippet_count} snippets for {notebook_path}")
-
-                # CRITICAL: Extract column-level schemas for STTM generation
-                # Try to get actual file path from first document metadata
-                actual_file_path = None
-                if notebook_docs:
-                    metadata = notebook_docs[0].get('metadata', {})
-                    actual_file_path = metadata.get('file_path', '') or metadata.get('source', '')
-
-                if actual_file_path and Path(actual_file_path).exists():
-                    column_schemas = self.extract_column_schemas_from_notebook(actual_file_path)
-                    if column_schemas:
-                        enriched_info['column_schemas'] = column_schemas
-                        total_columns = sum(len(cols) for cols in column_schemas.values())
-                        logger.info(f"   📋 Extracted {len(column_schemas)} table schemas with {total_columns} total columns")
-                    else:
-                        enriched_info['column_schemas'] = {}
-                else:
-                    logger.debug(f"   No file path found for {notebook_path} - skipping column schema extraction")
-                    enriched_info['column_schemas'] = {}
-
-                return enriched_info
+                result = json.loads(json_str)
+                return result
 
             except json.JSONDecodeError as e:
                 logger.warning(f"   Failed to parse AI response as JSON: {e}")
                 return None
 
         except Exception as e:
-            logger.error(f"   ❌ Failed to extract notebook logic with AI: {e}")
+            logger.error(f"   ❌ Failed AI analysis: {e}")
             return None
+
+    def _construct_file_path_from_notebook_path(self, notebook_path: str) -> Optional[str]:
+        """
+        Construct actual file system path from Databricks notebook path
+
+        Converts:
+        - /Insleads-code/CDD/bdf_download/extra_check_bcs
+        → Databricks_repo/CDD/bdf_download/extra_check_bcs.py
+
+        - /Insleads-code/Common-Util/log_notification
+        → Databricks_repo/Common-Util/log_notification.py
+        """
+        if not notebook_path or notebook_path == 'Unknown':
+            return None
+
+        # Remove leading '/Insleads-code/' or similar prefix
+        notebook_relative = notebook_path
+        for prefix in ['/Insleads-code/', '/Workspace/Insleads-code/', 'Insleads-code/']:
+            if notebook_relative.startswith(prefix):
+                notebook_relative = notebook_relative[len(prefix):]
+                break
+
+        # Try common Databricks repository root patterns
+        possible_roots = [
+            'Databricks_repo',
+            '../Databricks_repo',
+            './Databricks_repo',
+            'repos/Databricks_repo',
+        ]
+
+        for root in possible_roots:
+            # Try with .py extension
+            candidate_py = Path(root) / notebook_relative
+            if not str(candidate_py).endswith('.py'):
+                candidate_py = Path(str(candidate_py) + '.py')
+
+            if candidate_py.exists():
+                logger.debug(f"   📁 Constructed path: {notebook_path} → {candidate_py}")
+                return str(candidate_py)
+
+            # Try with .ipynb extension
+            candidate_ipynb = Path(root) / notebook_relative
+            if not str(candidate_ipynb).endswith('.ipynb'):
+                candidate_ipynb = Path(str(candidate_ipynb) + '.ipynb')
+
+            if candidate_ipynb.exists():
+                logger.debug(f"   📁 Constructed path: {notebook_path} → {candidate_ipynb}")
+                return str(candidate_ipynb)
+
+        # If not found, return most likely path for error logging
+        return str(Path('Databricks_repo') / notebook_relative) + '.py'
 
     def _search_notebook_code(self, notebook_path: str) -> List[str]:
         """Fallback: Search for notebook code using basic extraction"""
