@@ -1305,6 +1305,15 @@ class DatabricksLogicExtractor:
                 schema_var = createdf_match.group(2)
                 lineage[df_name] = f"__schema_{schema_var}__"
 
+            # Pattern 6: df = readfromcosmosdb(config) or other read helper functions
+            # These return DataFrames but don't have explicit schemas - mark for AI inference
+            read_helper_match = re.search(r'(\w+)\s*=\s*(readfromcosmosdb|readcsv|readparquet|read\w+)\(', line)
+            if read_helper_match:
+                df_name = read_helper_match.group(1)
+                helper_func = read_helper_match.group(2)
+                # Mark this DataFrame as coming from a helper function
+                lineage[df_name] = f"__helper_{helper_func}__"
+
         return lineage
 
     def _get_fullest_schema(self, df_name: str, lineage: Dict[str, str], schemas: Dict[str, List[Dict]]) -> List[Dict]:
