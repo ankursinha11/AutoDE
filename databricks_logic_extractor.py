@@ -754,18 +754,26 @@ class DatabricksLogicExtractor:
         Extract schemas by linking DataFrames to their write operations
 
         Strategy:
-        1. Parse all .select() operations to build DataFrame -> columns mapping
-        2. Parse all write operations (writecsv, .write, saveAsTable) to get DataFrame -> table_name mapping
-        3. Combine to get table_name -> columns mapping
+        1. Extract StructType schema definitions (explicit column definitions)
+        2. Parse all .select() operations to build DataFrame -> columns mapping
+        3. Parse all write operations (writecsv, writeparquet, .write, saveAsTable) to get DataFrame -> table_name mapping
+        4. Combine to get table_name -> columns mapping
         """
         import re
 
         logger.info(f"      Parsing PySpark with write linkage in {notebook_name}")
 
-        # Step 1: Build DataFrame schemas from .select() operations
+        # Step 1: Extract StructType schemas
+        struct_schemas = self._extract_structtype_schemas(content)
+
+        # Step 2: Build DataFrame schemas from .select() operations
         dataframe_schemas = self._parse_dataframe_select_operations(content)
 
-        # Step 2: Find write operations and link to table names
+        # Step 3: Merge StructType schemas into dataframe_schemas
+        # This allows lineage tracing to find StructType schemas
+        dataframe_schemas.update(struct_schemas)
+
+        # Step 4: Find write operations and link to table names
         table_schemas = self._link_dataframes_to_tables(content, dataframe_schemas)
 
         logger.info(f"      ✅ Extracted {len(table_schemas)} table schemas from {notebook_name}")
@@ -1055,12 +1063,19 @@ class DatabricksLogicExtractor:
 
         Handles:
         - writecsv(spark, df_name, baseurl+path+'table_name/'+bc, ...)
+        - writeparquet(spark, df_name, baseurl+path+'table_name/'+bc, ...)
         - df.write.parquet(path)
         - df.write.saveAsTable("table_name")
+        - writetocosmosdb(df, config) with StructType schema definitions
         """
         import re
 
-        # First, build DataFrame lineage (df_name -> source_df_name)
+        # First, extract StructType schema definitions (explicit column definitions)
+        struct_schemas = self._extract_structtype_schemas(content)
+        if struct_schemas:
+            logger.debug(f"          Found {len(struct_schemas)} StructType schema definitions")
+
+        # Build DataFrame lineage (df_name -> source_df_name)
         df_lineage = self._build_dataframe_lineage(content)
 
         table_schemas = {}
@@ -1094,28 +1109,146 @@ class DatabricksLogicExtractor:
                                 table_schemas[table_name].append(col)
                         logger.debug(f"          Linked DataFrame '{df_name}' -> Table '{table_name}' ({len(full_schema)} columns)")
 
-            # Pattern 2: df.write.parquet(...) or df.write.saveAsTable(...)
-            write_match = re.search(r'(\w+)\.write\.(parquet|saveAsTable)\([\'"]?([^\'"]+)', line)
-            if write_match:
-                df_name = write_match.group(1)
-                path_or_table = write_match.group(3)
+            # Pattern 2: writeparquet(spark, df_name, baseurl+path+'table_name/'+bc, ...)
+            writeparquet_match = re.search(r'writeparquet\([^,]+,\s*(\w+)\s*,', line)
+            if writeparquet_match:
+                df_name = writeparquet_match.group(1)
 
                 # Extract table name from path
-                table_name = path_or_table.split('/')[-1] if '/' in path_or_table else path_or_table
+                table_match = re.search(r"\+['\"]([^/'\"]+)/['\"]", line)
+                if table_match:
+                    table_name = table_match.group(1)
+                    table_name = re.sub(r'-M1$', '', table_name)
 
-                # Get fullest schema by tracing lineage
+                    # Get fullest schema by tracing lineage
+                    full_schema = self._get_fullest_schema(df_name, df_lineage, dataframe_schemas)
+
+                    if full_schema:
+                        if table_name not in table_schemas:
+                            table_schemas[table_name] = []
+                        existing_cols = {c['name'] for c in table_schemas[table_name]}
+                        for col in full_schema:
+                            if col['name'] not in existing_cols:
+                                table_schemas[table_name].append(col)
+                        logger.debug(f"          Linked DataFrame '{df_name}' -> Table '{table_name}' ({len(full_schema)} columns)")
+
+            # Pattern 3: df.write.parquet(...) or df.write.saveAsTable(...)
+            write_match = re.search(r'(\w+)\.write\.(parquet|saveAsTable|format\([\'"](?:cosmos\.oltp|delta)[\'"]\))', line)
+            if write_match:
+                df_name = write_match.group(1)
+
+                # Extract path/table from the line
+                path_match = re.search(r'(?:parquet|saveAsTable|save)\([\'"]?([^\'"]+)', line)
+                if path_match:
+                    path_or_table = path_match.group(1)
+                    table_name = path_or_table.split('/')[-1] if '/' in path_or_table else path_or_table
+
+                    # Get fullest schema by tracing lineage
+                    full_schema = self._get_fullest_schema(df_name, df_lineage, dataframe_schemas)
+
+                    if full_schema:
+                        if table_name not in table_schemas:
+                            table_schemas[table_name] = []
+                        existing_cols = {c['name'] for c in table_schemas[table_name]}
+                        for col in full_schema:
+                            if col['name'] not in existing_cols:
+                                table_schemas[table_name].append(col)
+                        logger.debug(f"          Linked DataFrame '{df_name}' -> Table '{table_name}' ({len(full_schema)} columns)")
+
+            # Pattern 4: writetocosmosdb(df, config) - use StructType schema if available
+            writecosmosdb_match = re.search(r'writetocosmosdb\((\w+)\s*,', line)
+            if writecosmosdb_match:
+                df_name = writecosmosdb_match.group(1)
+
+                # Try to get schema from DataFrame lineage first
                 full_schema = self._get_fullest_schema(df_name, df_lineage, dataframe_schemas)
 
+                # If no schema from lineage, check if there's a StructType schema defined
+                if not full_schema and struct_schemas:
+                    # Use the first StructType schema found (common pattern: one schema per notebook)
+                    schema_name = list(struct_schemas.keys())[0]
+                    full_schema = struct_schemas[schema_name]
+                    logger.debug(f"          Using StructType schema '{schema_name}' for CosmosDB write")
+
                 if full_schema:
+                    # Use a generic table name (can be enhanced if table name is in config)
+                    table_name = "cosmosdb_table"
                     if table_name not in table_schemas:
                         table_schemas[table_name] = []
                     existing_cols = {c['name'] for c in table_schemas[table_name]}
                     for col in full_schema:
                         if col['name'] not in existing_cols:
                             table_schemas[table_name].append(col)
-                    logger.debug(f"          Linked DataFrame '{df_name}' -> Table '{table_name}' ({len(full_schema)} columns)")
+                    logger.debug(f"          Linked DataFrame '{df_name}' -> CosmosDB ({len(full_schema)} columns)")
 
         return table_schemas
+
+    def _extract_structtype_schemas(self, content: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract StructType schema definitions from notebook
+
+        Example:
+        schema = StructType([
+            StructField("permid", StringType(), nullable=True),
+            StructField("patientacctifk", StringType(), nullable=True),
+            StructField("hospitalfk", ShortType(), nullable=False)
+        ])
+
+        Returns: {schema_variable_name: [columns]}
+        """
+        import re
+
+        schemas = {}
+        lines = content.split('\n')
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+
+            # Look for schema = StructType([...])
+            struct_match = re.search(r'(\w+)\s*=\s*StructType\(\[', line)
+            if struct_match:
+                schema_name = struct_match.group(1)
+
+                # Extract multi-line StructType definition
+                struct_content = line
+                bracket_count = line.count('[') - line.count(']')
+                j = i + 1
+
+                # Continue reading until brackets are balanced
+                while bracket_count > 0 and j < len(lines):
+                    struct_content += '\n' + lines[j]
+                    bracket_count += lines[j].count('[') - lines[j].count(']')
+                    j += 1
+
+                # Parse StructField definitions
+                columns = []
+                order = 1
+
+                # Pattern: StructField("name", Type(), nullable=...)
+                field_pattern = r'StructField\([\'"]([^\'"]+)[\'"]\s*,\s*(\w+Type)\(\)'
+                for match in re.finditer(field_pattern, struct_content):
+                    col_name = match.group(1)
+                    col_type = match.group(2).replace('Type', '').upper()
+
+                    columns.append({
+                        'name': col_name,
+                        'type': col_type,
+                        'order': order,
+                        'source_line': i + 1,
+                        'transformation': 'StructType definition'
+                    })
+                    order += 1
+
+                if columns:
+                    schemas[schema_name] = columns
+                    logger.debug(f"          Found StructType '{schema_name}': {len(columns)} columns")
+
+                i = j
+            else:
+                i += 1
+
+        return schemas
 
     def _build_dataframe_lineage(self, content: str) -> Dict[str, str]:
         """
@@ -1124,33 +1257,53 @@ class DatabricksLogicExtractor:
         Examples:
         - distinctRecsSelectedFields = distinctRecs.select(...) -> {distinctRecsSelectedFields: distinctRecs}
         - allRecs = postBDF.select(...) -> {allRecs: postBDF}
+        - df = readcsv_permissive(spark, path, schema, ...) -> links df to schema
         """
         import re
 
         lineage = {}
         lines = content.split('\n')
 
+        # First, extract StructType schemas and create pseudo-dataframes for them
+        struct_schemas = self._extract_structtype_schemas(content)
+
         for line in lines:
-            # Pattern: df_name = source_df.select(...)
+            # Pattern 1: df_name = source_df.select(...)
             select_match = re.search(r'(\w+)\s*=\s*(\w+)\.select\s*\(', line)
             if select_match:
                 df_name = select_match.group(1)
                 source_df = select_match.group(2)
                 lineage[df_name] = source_df
 
-            # Pattern: df_name = source_df.withColumn(...)
+            # Pattern 2: df_name = source_df.withColumn(...)
             with_col_match = re.search(r'(\w+)\s*=\s*(\w+)\.withColumn\s*\(', line)
             if with_col_match:
                 df_name = with_col_match.group(1)
                 source_df = with_col_match.group(2)
                 lineage[df_name] = source_df
 
-            # Pattern: df_name = source_df.filter(...) or .groupBy(...) etc.
+            # Pattern 3: df_name = source_df.filter(...) or .groupBy(...) etc.
             transform_match = re.search(r'(\w+)\s*=\s*(\w+)\.(filter|groupBy|join|union|dropDuplicates)\s*\(', line)
             if transform_match:
                 df_name = transform_match.group(1)
                 source_df = transform_match.group(2)
                 lineage[df_name] = source_df
+
+            # Pattern 4: df = readcsv_permissive(spark, path, schema_var, ...)
+            # This links DataFrame to a StructType schema variable
+            readcsv_match = re.search(r'(\w+)\s*=\s*readcsv_permissive\([^,]+,[^,]+,\s*(\w+)\s*,', line)
+            if readcsv_match:
+                df_name = readcsv_match.group(1)
+                schema_var = readcsv_match.group(2)
+                # Link df to schema (pseudo-source)
+                lineage[df_name] = f"__schema_{schema_var}__"
+
+            # Pattern 5: df = spark.createDataFrame(data, schema_var)
+            createdf_match = re.search(r'(\w+)\s*=\s*spark\.createDataFrame\([^,]+,\s*(\w+)\s*\)', line)
+            if createdf_match:
+                df_name = createdf_match.group(1)
+                schema_var = createdf_match.group(2)
+                lineage[df_name] = f"__schema_{schema_var}__"
 
         return lineage
 
@@ -1159,15 +1312,31 @@ class DatabricksLogicExtractor:
         Get the fullest schema by tracing DataFrame lineage backwards
 
         Strategy: Walk the lineage chain and return the schema with the MOST columns
+
+        Also handles StructType schema pseudo-sources (e.g., __schema_permid_schema__)
         """
         visited = set()
         candidate_schemas = []
 
         current_df = df_name
 
+        # Extract StructType schemas from content (for schema pseudo-sources)
+        struct_schemas = {}
+        # This will be populated by _extract_structtype_schemas() called earlier
+
         # Trace backwards through lineage
         while current_df and current_df not in visited:
             visited.add(current_df)
+
+            # Check if this is a schema pseudo-source (e.g., __schema_permid_patientacctid_schema__)
+            if current_df.startswith('__schema_') and current_df.endswith('__'):
+                schema_var_name = current_df[9:-2]  # Remove __schema_ prefix and __ suffix
+
+                # Look for this schema in the schemas dict (should have been extracted earlier)
+                if schema_var_name in schemas:
+                    candidate_schemas.append((current_df, schemas[schema_var_name]))
+                    logger.debug(f"             Found StructType schema: {schema_var_name}")
+                    break  # StructType is the source, no need to continue
 
             # If this DataFrame has a schema, add it as a candidate
             if current_df in schemas:
@@ -1718,9 +1887,10 @@ CRITICAL: Provide EXHAUSTIVE detail. Aim for 10-30 step-by-step logic items and 
         → Databricks_repo/CDD/bdf_download/extra_check_bcs.py
 
         - /Insleads-code/Common-Util/log_notification
-        → Databricks_repo/Common-Util/log_notification.py
+        → Databricks_repo/CDD/Common-Util/log_notification.py (or GMRN/Common-Util, etc.)
         """
         if not notebook_path or notebook_path == 'Unknown':
+            logger.warning(f"   ⚠ Invalid notebook path: '{notebook_path}'")
             return None
 
         # Remove leading '/Insleads-code/' or similar prefix
@@ -1730,6 +1900,9 @@ CRITICAL: Provide EXHAUSTIVE detail. Aim for 10-30 step-by-step logic items and 
                 notebook_relative = notebook_relative[len(prefix):]
                 break
 
+        # Check if this is a Common-Util file
+        is_common_util = 'Common-Util' in notebook_relative or 'common-util' in notebook_relative.lower()
+
         # Try common Databricks repository root patterns
         possible_roots = [
             'Databricks_repo',
@@ -1738,6 +1911,7 @@ CRITICAL: Provide EXHAUSTIVE detail. Aim for 10-30 step-by-step logic items and 
             'repos/Databricks_repo',
         ]
 
+        # Strategy 1: Direct path construction (fastest)
         for root in possible_roots:
             # Try with .py extension
             candidate_py = Path(root) / notebook_relative
@@ -1757,8 +1931,66 @@ CRITICAL: Provide EXHAUSTIVE detail. Aim for 10-30 step-by-step logic items and 
                 logger.debug(f"   📁 Constructed path: {notebook_path} → {candidate_ipynb}")
                 return str(candidate_ipynb)
 
-        # If not found, return most likely path for error logging
-        return str(Path('Databricks_repo') / notebook_relative) + '.py'
+        # Strategy 2: For Common-Util, search recursively in subdirectories
+        if is_common_util:
+            import glob
+
+            # Extract just the filename from the path
+            parts = notebook_relative.split('/')
+            filename = parts[-1]  # Get the last part (e.g., "log_notification")
+
+            logger.debug(f"   🔍 Searching for Common-Util file: {filename}")
+
+            for root in possible_roots:
+                if not Path(root).exists():
+                    continue
+
+                # Search patterns for Common-Util in various locations
+                search_patterns = [
+                    f"{root}/**/Common-Util/{filename}.py",
+                    f"{root}/**/common-util/{filename}.py",
+                    f"{root}/Common-Util/{filename}.py",
+                    f"{root}/**/Common-Util/{filename}.ipynb",
+                    f"{root}/**/common-util/{filename}.ipynb",
+                ]
+
+                for pattern in search_patterns:
+                    matches = glob.glob(pattern, recursive=True)
+                    if matches:
+                        # Return first valid match
+                        logger.info(f"   ✅ Found Common-Util file via glob: {matches[0]}")
+                        return matches[0]
+
+            logger.warning(f"   ⚠ Common-Util file not found after recursive search: {filename}")
+
+        # Strategy 3: Try searching in project subdirectories (CDD, GMRN, etc.)
+        # For paths like "CDD/bdf_download/script" - sometimes they're actually under subdirs
+        if '/' in notebook_relative:
+            first_part = notebook_relative.split('/')[0]
+
+            # Known project subdirectories
+            project_subdirs = ['CDD', 'GMRN', 'KnownCommercial', 'UnknownCommercial']
+
+            if first_part not in project_subdirs:
+                # Try prepending common project dirs
+                for root in possible_roots:
+                    if not Path(root).exists():
+                        continue
+
+                    for subdir in project_subdirs:
+                        candidate = Path(root) / subdir / notebook_relative
+
+                        for ext in ['.py', '.ipynb']:
+                            test_path = Path(str(candidate) + ext) if not str(candidate).endswith(ext) else candidate
+
+                            if test_path.exists():
+                                logger.info(f"   ✅ Found in project subdir: {test_path}")
+                                return str(test_path)
+
+        # If not found, return None (caller will handle fallback)
+        logger.warning(f"   ⚠ File not found for notebook: {notebook_path}")
+        logger.warning(f"      Searched in: {', '.join(possible_roots)}")
+        return None
 
     def _search_notebook_code(self, notebook_path: str) -> List[str]:
         """Fallback: Search for notebook code using basic extraction"""
