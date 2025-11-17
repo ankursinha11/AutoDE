@@ -245,12 +245,66 @@ class STAGSTTMGenerator:
             logger.warning(f"      ⚠ No columns extracted from {system} - column_schemas may be empty!")
             return None
 
+        # Infer schema name based on table names and script names
+        schema_name = self._infer_schema_name(unique_columns, source_files, system)
+
         return {
             'table_name': consolidated_table_name,
-            'schema': system.upper(),
+            'schema': schema_name,
             'columns': unique_columns,
             'source_files': source_files
         }
+
+    def _infer_schema_name(self, columns: List[Dict], source_files: List[str], system: str) -> str:
+        """
+        Infer business schema name from table names and source files
+
+        Examples:
+        - Hadoop tables like 'permIdPatientAcctId', 'allDistinctRecs' -> ES_BDF
+        - Hadoop tables with 'swift' in path -> ES_SWIFT
+        - Hadoop tables with 'permid' in name -> PERMID_DATA
+        - Databricks -> DATABRICKS_BDF (or based on output names)
+        """
+        # Check table names from columns
+        table_names = set()
+        for col in columns:
+            if 'source_table' in col:
+                table_names.add(col['source_table'].lower())
+
+        # Check source files
+        source_paths = ' '.join(source_files).lower()
+
+        # Hadoop schema inference
+        if system in ['hadoop', 'abinitio']:
+            # Check for SWIFT references
+            if 'swift' in source_paths or any('swift' in t for t in table_names):
+                return 'ES_SWIFT'
+
+            # Check for PERMID references
+            if 'permid' in source_paths or any('permid' in t for t in table_names):
+                return 'PERMID_DATA'
+
+            # Default for Entity Search BDF
+            if 'bdf' in source_paths or any('bdf' in t for t in table_names):
+                return 'ES_BDF'
+
+            # Fallback
+            return 'HADOOP_DATA'
+
+        elif system == 'databricks':
+            # Check for SWIFT references
+            if 'swift' in source_paths or any('swift' in t for t in table_names):
+                return 'DATABRICKS_SWIFT'
+
+            # Check for PERMID references
+            if 'permid' in source_paths or any('permid' in t for t in table_names):
+                return 'PERMID_DATA'
+
+            # Default for Databricks BDF
+            return 'DATABRICKS_BDF'
+
+        # Fallback
+        return system.upper()
 
     def _extract_schema_with_rag(
         self,
@@ -791,6 +845,82 @@ Now generate the COMPLETE 13-column STTM for ALL target columns:
             logger.warning(f"Failed to parse mappings response: {e}")
             return []
 
+    def _calculate_processing_order(self, mappings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Calculate dependency-based processing order
+
+        Rules:
+        1. Columns with no dependencies get lowest order
+        2. Columns processed together (same transformation) get same order
+        3. Columns that depend on others get higher order
+
+        Returns updated mappings with processing_order set
+        """
+        # Build dependency graph
+        field_to_mapping = {m.get('target_field', ''): m for m in mappings}
+
+        # Calculate dependency depth for each field
+        def get_dependency_depth(field_name, visited=None):
+            """Recursively calculate max dependency depth"""
+            if visited is None:
+                visited = set()
+
+            if field_name in visited:
+                return 0  # Circular dependency
+
+            mapping = field_to_mapping.get(field_name)
+            if not mapping:
+                return 0
+
+            depends_on = mapping.get('field_depends_on', '')
+            if not depends_on or depends_on == 'None' or depends_on == '':
+                return 1  # Base level - no dependencies
+
+            visited.add(field_name)
+
+            # Parse dependencies (can be comma-separated)
+            deps = [d.strip() for d in str(depends_on).split(',') if d.strip()]
+            max_depth = 0
+
+            for dep in deps:
+                if dep in field_to_mapping:
+                    dep_depth = get_dependency_depth(dep, visited.copy())
+                    max_depth = max(max_depth, dep_depth)
+
+            return max_depth + 1
+
+        # Assign processing order based on dependency depth
+        for mapping in mappings:
+            field_name = mapping.get('target_field', '')
+            depth = get_dependency_depth(field_name)
+
+            # Multiply by 10 to leave room for same-transformation grouping
+            mapping['processing_order'] = depth * 10
+
+        # Group fields with same transformation (same order)
+        # Fields from same source line/transformation should have same order
+        transformation_groups = {}
+        for mapping in mappings:
+            transformation = mapping.get('pre_processing_rules', '')
+            source_line = mapping.get('source_line', 0)
+
+            # Create key from transformation + source location
+            group_key = (transformation[:100] if transformation else '', source_line)
+
+            if group_key not in transformation_groups:
+                transformation_groups[group_key] = []
+            transformation_groups[group_key].append(mapping)
+
+        # Assign same order to fields in same transformation group
+        for group_mappings in transformation_groups.values():
+            if len(group_mappings) > 1:
+                # All fields in this group get the minimum order from the group
+                min_order = min(m['processing_order'] for m in group_mappings)
+                for m in group_mappings:
+                    m['processing_order'] = min_order
+
+        return mappings
+
     def _validate_mappings(
         self,
         mappings: List[Dict[str, Any]],
@@ -801,8 +931,11 @@ Now generate the COMPLETE 13-column STTM for ALL target columns:
 
         target_columns = {col['name'] for col in target_schema.get('columns', [])}
 
+        # Calculate dependency-based processing order
+        mappings = self._calculate_processing_order(mappings)
+
         for i, mapping in enumerate(mappings, 1):
-            # Ensure processing_order is sequential
+            # Ensure processing_order exists (should be set by _calculate_processing_order)
             if 'processing_order' not in mapping or not mapping['processing_order']:
                 mapping['processing_order'] = i
 

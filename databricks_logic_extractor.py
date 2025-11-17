@@ -1116,21 +1116,37 @@ class DatabricksLogicExtractor:
 
                 # Extract table name from path
                 table_match = re.search(r"\+['\"]([^/'\"]+)/['\"]", line)
+                table_name = None
+
                 if table_match:
                     table_name = table_match.group(1)
                     table_name = re.sub(r'-M1$', '', table_name)
+                else:
+                    # FALLBACK: If no table name in path, try to extract from variable name or use generic name
+                    # Look for patterns like: baseurl+hdfs_permid_publish + "/" + bc
+                    # Extract the last path component from variable names
+                    var_match = re.search(r'(\w+)\s*\+\s*["\']/', line)
+                    if var_match:
+                        var_name = var_match.group(1)
+                        # Use variable name as hint (e.g., hdfs_permid_publish -> permid_publish)
+                        table_name = var_name.replace('hdfs_', '').replace('_input', '').replace('_output', '').replace('_publish', '_parquet')
+                        logger.debug(f"          Inferred table name '{table_name}' from variable '{var_name}'")
+                    else:
+                        # Last resort: use a generic name based on DataFrame
+                        table_name = f"parquet_output_{df_name}"
+                        logger.debug(f"          Using generic table name: {table_name}")
 
-                    # Get fullest schema by tracing lineage
-                    full_schema = self._get_fullest_schema(df_name, df_lineage, dataframe_schemas)
+                # Get fullest schema by tracing lineage
+                full_schema = self._get_fullest_schema(df_name, df_lineage, dataframe_schemas)
 
-                    if full_schema:
-                        if table_name not in table_schemas:
-                            table_schemas[table_name] = []
-                        existing_cols = {c['name'] for c in table_schemas[table_name]}
-                        for col in full_schema:
-                            if col['name'] not in existing_cols:
-                                table_schemas[table_name].append(col)
-                        logger.debug(f"          Linked DataFrame '{df_name}' -> Table '{table_name}' ({len(full_schema)} columns)")
+                if full_schema and table_name:
+                    if table_name not in table_schemas:
+                        table_schemas[table_name] = []
+                    existing_cols = {c['name'] for c in table_schemas[table_name]}
+                    for col in full_schema:
+                        if col['name'] not in existing_cols:
+                            table_schemas[table_name].append(col)
+                    logger.debug(f"          Linked DataFrame '{df_name}' -> Table '{table_name}' ({len(full_schema)} columns)")
 
             # Pattern 3: df.write.parquet(...) or df.write.saveAsTable(...)
             write_match = re.search(r'(\w+)\.write\.(parquet|saveAsTable|format\([\'"](?:cosmos\.oltp|delta)[\'"]\))', line)
@@ -1297,6 +1313,7 @@ class DatabricksLogicExtractor:
                 schema_var = readcsv_match.group(2)
                 # Link df to schema (pseudo-source)
                 lineage[df_name] = f"__schema_{schema_var}__"
+                continue  # CRITICAL: Skip Pattern 6 for this line
 
             # Pattern 5: df = spark.createDataFrame(data, schema_var)
             createdf_match = re.search(r'(\w+)\s*=\s*spark\.createDataFrame\([^,]+,\s*(\w+)\s*\)', line)
@@ -1304,9 +1321,11 @@ class DatabricksLogicExtractor:
                 df_name = createdf_match.group(1)
                 schema_var = createdf_match.group(2)
                 lineage[df_name] = f"__schema_{schema_var}__"
+                continue  # CRITICAL: Skip Pattern 6 for this line
 
             # Pattern 6: df = readfromcosmosdb(config) or other read helper functions
             # These return DataFrames but don't have explicit schemas - mark for AI inference
+            # NOTE: This must come AFTER Patterns 4 & 5 to avoid overwriting schema links
             read_helper_match = re.search(r'(\w+)\s*=\s*(readfromcosmosdb|readcsv|readparquet|read\w+)\(', line)
             if read_helper_match:
                 df_name = read_helper_match.group(1)

@@ -831,73 +831,193 @@ CRITICAL REQUIREMENTS:
         table_schemas = {}
         lines = content.split('\n')
 
-        # Step 1: Parse LOAD statements to get input schemas
-        # Pattern: LOAD 'path' AS (field1:type, field2:type, ...)
+        # Step 1: Parse LOAD statements to get input schemas (MULTI-LINE SUPPORT)
+        # Pattern: alias = LOAD 'path' USING loader(...) AS (field1:type, field2:type, ...)
         load_schemas = {}
-        load_pattern = r'(\w+)\s*=\s*LOAD\s+[^)]+AS\s*\(\s*([^)]+)\)'
 
-        for i, line in enumerate(lines):
-            load_match = re.search(load_pattern, line, re.IGNORECASE | re.DOTALL)
-            if load_match:
-                alias = load_match.group(1)
-                schema_str = load_match.group(2)
+        i = 0
+        while i < len(lines):
+            line = lines[i]
 
-                # Parse schema: field1:type, field2:type, ...
-                columns = []
-                field_parts = [f.strip() for f in schema_str.split(',')]
+            # Look for start of LOAD statement
+            load_start_match = re.search(r'(\w+)\s*=\s*LOAD\s+', line, re.IGNORECASE)
+            if load_start_match:
+                alias = load_start_match.group(1)
 
-                for idx, field_part in enumerate(field_parts):
-                    if ':' in field_part:
-                        field_name, field_type = field_part.split(':', 1)
-                        columns.append({
-                            'name': field_name.strip(),
-                            'type': field_type.strip(),
-                            'order': idx + 1,
-                            'source_line': i + 1
-                        })
+                # Accumulate lines until we find the closing parenthesis of AS (...)
+                load_statement = line
+                j = i + 1
+                paren_depth = 0
+                found_as = False
 
-                load_schemas[alias] = columns
-                logger.debug(f"      Found LOAD schema for '{alias}': {len(columns)} columns")
+                # Track parentheses after AS keyword
+                if re.search(r'AS\s*\(', load_statement, re.IGNORECASE):
+                    found_as = True
+                    paren_depth = load_statement.count('(') - load_statement.count(')')
 
-        # Step 2: Parse FOREACH statements to track transformations
+                while j < len(lines) and (not found_as or paren_depth > 0):
+                    load_statement += '\n' + lines[j]
+
+                    if not found_as and re.search(r'AS\s*\(', lines[j], re.IGNORECASE):
+                        found_as = True
+
+                    if found_as:
+                        paren_depth += lines[j].count('(') - lines[j].count(')')
+
+                    j += 1
+                    if j - i > 100:  # Safety limit
+                        break
+
+                # Extract schema - try two patterns:
+                # Pattern 1: AS (field1:type, field2:type, ...)
+                # Pattern 2: FixedWidthLoader(..., 'field1: type, field2: type')
+
+                schema_str = None
+
+                # Try AS pattern first
+                as_match = re.search(r'AS\s*\(\s*(.+?)\s*\)(?:\s*;|\s*$)', load_statement, re.IGNORECASE | re.DOTALL)
+                if as_match:
+                    schema_str = as_match.group(1)
+                else:
+                    # Try FixedWidthLoader pattern - schema is in the LAST quoted string before the closing paren
+                    # Find all quoted strings in FixedWidthLoader
+                    if 'FixedWidthLoader' in load_statement:
+                        # Find the last quoted string which contains field:type patterns
+                        quoted_strings = re.findall(r'[\'\"]([^\'\"]+)[\'\"]', load_statement)
+                        for qs in reversed(quoted_strings):
+                            if ':' in qs and 'chararray' in qs.lower():
+                                schema_str = qs
+                                break
+
+                if schema_str:
+                    # Parse schema: field1:type, field2:type, ... or field1: type, field2: type
+                    # Handle both single-line and multi-line schemas
+                    columns = []
+                    # Split by comma, but be careful with nested parentheses
+                    field_parts = [f.strip() for f in re.split(r',\s*(?![^()]*\))', schema_str)]
+
+                    for idx, field_part in enumerate(field_parts):
+                        # Clean up field part (remove quotes, extra spaces, newlines)
+                        field_part = field_part.strip().strip(',').strip()
+
+                        if ':' in field_part:
+                            parts = field_part.split(':', 1)
+                            field_name = parts[0].strip()
+                            field_type = parts[1].strip()
+
+                            columns.append({
+                                'name': field_name,
+                                'type': field_type,
+                                'order': idx + 1,
+                                'source_line': i + 1
+                            })
+
+                    if columns:
+                        load_schemas[alias] = columns
+                        logger.debug(f"      Found LOAD schema for '{alias}': {len(columns)} columns")
+
+                i = j
+            else:
+                i += 1
+
+        # Step 1.5: Initialize schema dicts
+        group_schemas = {}
+        foreach_schemas = {}  # Initialize early for cross-references
+
+        # Step 2: Parse FOREACH statements to track transformations (MULTI-LINE SUPPORT)
         # Pattern: alias = FOREACH src GENERATE field1, field2 AS alias2, ...
-        foreach_schemas = {}
-        foreach_pattern = r'(\w+)\s*=\s*(?:FOREACH|foreach)\s+(\w+)\s+(?:GENERATE|generate)\s+(.+?)(?:;|$)'
+        i = 0
+        while i < len(lines):
+            line = lines[i]
 
-        for i, line in enumerate(lines):
-            foreach_match = re.search(foreach_pattern, line, re.IGNORECASE)
-            if foreach_match:
-                alias = foreach_match.group(1)
-                source_alias = foreach_match.group(2)
-                generate_fields = foreach_match.group(3)
+            foreach_start_match = re.search(r'(\w+)\s*=\s*(?:FOREACH|foreach)\s+(\w+)\s+(?:GENERATE|generate)', line, re.IGNORECASE)
+            if foreach_start_match:
+                alias = foreach_start_match.group(1)
+                source_alias = foreach_start_match.group(2)
+
+                # Accumulate lines until semicolon
+                foreach_statement = line
+                j = i + 1
+                while j < len(lines) and ';' not in foreach_statement:
+                    foreach_statement += ' ' + lines[j].strip()
+                    j += 1
+                    if j - i > 50:  # Safety limit
+                        break
+
+                # Extract GENERATE fields
+                generate_match = re.search(r'(?:GENERATE|generate)\s+(.+?)(?:;|$)', foreach_statement, re.IGNORECASE | re.DOTALL)
+                if not generate_match:
+                    i = j
+                    continue
+
+                generate_fields = generate_match.group(1)
 
                 # Parse generated fields
                 columns = []
                 field_parts = [f.strip() for f in generate_fields.split(',')]
 
-                source_schema = load_schemas.get(source_alias, foreach_schemas.get(source_alias, []))
+                # Get source schema - check LOAD, FOREACH, or GROUP schemas
+                source_schema = load_schemas.get(source_alias) or foreach_schemas.get(source_alias) or group_schemas.get(source_alias) or []
 
                 for idx, field_part in enumerate(field_parts):
                     # Handle various GENERATE formats:
-                    # - field_name
-                    # - $0
-                    # - TRIM($0) as PatientAcctId
-                    # - field_name as alias
+                    # - field_name (reference to source field)
+                    # - $0 (positional reference)
+                    # - TRIM($0) as PatientAcctId (transformation with alias)
+                    # - field_name as alias (rename)
+                    # - FLATTEN(group) (expands grouped fields)
 
                     # Extract column name and transformation
                     as_match = re.search(r'\s+as\s+(\w+)', field_part, re.IGNORECASE)
                     if as_match:
+                        # Has explicit alias
                         col_name = as_match.group(1)
                         transformation = field_part[:as_match.start()].strip()
                     else:
-                        # Simple field reference
-                        col_name = field_part.strip().replace('$', 'field')
-                        transformation = field_part.strip()
+                        # No alias - need to infer from source or expression
+                        field_clean = field_part.strip()
+
+                        # Handle FLATTEN(group) - expands to grouped fields
+                        if 'FLATTEN' in field_clean.upper() and 'group' in field_clean.lower():
+                            # Expand to the GROUP BY fields
+                            group_fields = group_schemas.get(source_alias, [])
+                            for group_col in group_fields:
+                                columns.append({
+                                    'name': group_col['name'],
+                                    'type': group_col['type'],
+                                    'order': len(columns) + 1,
+                                    'source_line': i + 1,
+                                    'transformation': f"FLATTEN(group).{group_col['name']}"
+                                })
+                            continue
+
+                        # Handle positional references like $0, $1
+                        positional_match = re.search(r'\$(\d+)', field_clean)
+                        if positional_match:
+                            pos = int(positional_match.group(1))
+                            if pos < len(source_schema):
+                                col_name = source_schema[pos]['name']
+                            else:
+                                col_name = f"field{pos}"
+                        else:
+                            # Simple field name reference - look it up in source schema
+                            field_name = re.sub(r'\W+', '', field_clean)  # Remove functions/parens
+                            col_name = None
+                            for src_col in source_schema:
+                                if src_col['name'].lower() == field_name.lower():
+                                    col_name = src_col['name']
+                                    break
+
+                            if not col_name:
+                                # Fallback: use the cleaned field name
+                                col_name = field_clean.split('(')[0].strip() if '(' in field_clean else field_clean
+
+                        transformation = field_clean
 
                     # Try to infer type from source schema
                     col_type = 'chararray'  # Default
                     for src_col in source_schema:
-                        if src_col['name'] == col_name or f"${idx}" in transformation:
+                        if src_col['name'] == col_name:
                             col_type = src_col.get('type', 'chararray')
                             break
 
@@ -911,6 +1031,98 @@ CRITICAL REQUIREMENTS:
 
                 foreach_schemas[alias] = columns
                 logger.debug(f"      Found FOREACH schema for '{alias}': {len(columns)} columns")
+
+                i = j
+            else:
+                i += 1
+
+        # Step 2.3: Parse GROUP BY statements (AFTER FOREACH so schemas are available)
+        # Pattern: alias = GROUP src BY (field1, field2, ...)
+        group_pattern = r'(\w+)\s*=\s*(?:GROUP|group)\s+(\w+)\s+(?:BY|by)\s+\(([^)]+)\)'
+
+        for i, line in enumerate(lines):
+            group_match = re.search(group_pattern, line, re.IGNORECASE)
+            if group_match:
+                alias = group_match.group(1)
+                source_alias = group_match.group(2)
+                group_fields_str = group_match.group(3)
+
+                # Parse grouped fields
+                group_fields = [f.strip() for f in group_fields_str.split(',')]
+                source_schema = load_schemas.get(source_alias) or foreach_schemas.get(source_alias) or []
+
+                # Store the fields that will be in the 'group' tuple
+                group_columns = []
+                for field in group_fields:
+                    # Look up field in source schema
+                    for src_col in source_schema:
+                        if src_col['name'] == field:
+                            group_columns.append(src_col.copy())
+                            break
+
+                group_schemas[alias] = group_columns
+                logger.debug(f"      Found GROUP BY for '{alias}': {len(group_columns)} grouped fields")
+
+        # Step 2.4: SECOND PASS on FOREACH to handle FLATTEN(group) now that GROUP schemas are available
+        # This handles cases where FOREACH GENERATE FLATTEN(group) appears before the GROUP BY statement
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+
+            # Only re-process FOREACH statements that have FLATTEN(group)
+            if 'FLATTEN' in line.upper() and 'group' in line.lower() and 'FOREACH' in line.upper():
+                foreach_start_match = re.search(r'(\w+)\s*=\s*(?:FOREACH|foreach)\s+(\w+)\s+(?:GENERATE|generate)', line, re.IGNORECASE)
+                if foreach_start_match:
+                    alias = foreach_start_match.group(1)
+                    source_alias = foreach_start_match.group(2)
+
+                    # Get the group fields
+                    group_fields = group_schemas.get(source_alias, [])
+
+                    if group_fields and alias in foreach_schemas and len(foreach_schemas[alias]) == 0:
+                        # Update with group fields
+                        foreach_schemas[alias] = [col.copy() for col in group_fields]
+                        logger.debug(f"      Updated FOREACH '{alias}' with FLATTEN(group): {len(group_fields)} columns")
+
+            i += 1
+
+        # Step 2.5: Parse DISTINCT and UNION operations (schema passthrough)
+        # Pattern: alias = DISTINCT source_alias
+        distinct_pattern = r'(\w+)\s*=\s*(?:DISTINCT|distinct)\s+(\w+)'
+
+        for i, line in enumerate(lines):
+            distinct_match = re.search(distinct_pattern, line, re.IGNORECASE)
+            if distinct_match:
+                alias = distinct_match.group(1)
+                source_alias = distinct_match.group(2)
+
+                # DISTINCT preserves the schema from source
+                source_schema = load_schemas.get(source_alias) or foreach_schemas.get(source_alias) or []
+
+                if source_schema:
+                    # Copy schema (DISTINCT doesn't change columns, just removes duplicates)
+                    foreach_schemas[alias] = [col.copy() for col in source_schema]
+                    logger.debug(f"      Found DISTINCT for '{alias}': {len(source_schema)} columns (passthrough)")
+
+        # Pattern: alias = UNION source1, source2, ...
+        union_pattern = r'(\w+)\s*=\s*(?:UNION|union)\s+(.+?)(?:;|$)'
+
+        for i, line in enumerate(lines):
+            union_match = re.search(union_pattern, line, re.IGNORECASE)
+            if union_match:
+                alias = union_match.group(1)
+                sources_str = union_match.group(2)
+
+                # Parse source aliases
+                source_aliases = [s.strip() for s in sources_str.split(',')]
+
+                # UNION uses schema from first source
+                for source_alias in source_aliases:
+                    source_schema = load_schemas.get(source_alias) or foreach_schemas.get(source_alias)
+                    if source_schema:
+                        foreach_schemas[alias] = [col.copy() for col in source_schema]
+                        logger.debug(f"      Found UNION for '{alias}': {len(source_schema)} columns from '{source_alias}'")
+                        break
 
         # Step 3: Parse STORE statements and map to final schemas
         # Pattern: STORE alias INTO 'path' [USING ...]
