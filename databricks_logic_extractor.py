@@ -660,6 +660,232 @@ class DatabricksLogicExtractor:
             logger.error(f"      Failed to extract outputs from notebook code: {e}")
             return []
 
+    def extract_column_schemas_from_notebook(self, notebook_path: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract column-level schemas from Databricks notebook for STTM generation
+
+        Returns:
+            {
+                'table_name': [
+                    {'name': 'HospitalFk', 'type': 'SHORT', 'order': 1, 'source_line': 115, 'transformation': '...'},
+                    ...
+                ]
+            }
+        """
+        logger.info(f"   🔍 Extracting column schemas from Databricks notebook: {notebook_path}")
+
+        try:
+            # Read notebook content
+            if not Path(notebook_path).exists():
+                logger.warning(f"      Notebook not found: {notebook_path}")
+                return {}
+
+            with open(notebook_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+
+            # Use the PySpark extraction logic from HadoopLogicExtractor
+            # Since Databricks notebooks are PySpark, we use the same patterns
+            return self._extract_column_schemas_from_pyspark(content, Path(notebook_path).name)
+
+        except Exception as e:
+            logger.error(f"      Failed to extract column schemas from notebook: {e}")
+            return {}
+
+    def _extract_column_schemas_from_pyspark(self, content: str, notebook_name: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract column-level schemas from PySpark/Databricks notebook content
+
+        This is the same logic as in HadoopLogicExtractor but duplicated here to avoid circular imports
+        """
+        import re
+
+        logger.info(f"      Parsing PySpark transformations in {notebook_name}")
+
+        table_schemas = {}
+        lines = content.split('\n')
+        dataframe_schemas = {}
+
+        # Step 1: Parse .select() operations to track column schemas
+        select_pattern = r'(\w+)\s*=\s*(\w+)\.select\('
+
+        for i, line in enumerate(lines):
+            select_match = re.search(select_pattern, line, re.IGNORECASE)
+            if select_match:
+                result_alias = select_match.group(1)
+                source_alias = select_match.group(2)
+
+                # Extract full select block (may span multiple lines)
+                select_block = self._extract_select_block(lines, i)
+
+                # Parse select fields
+                columns = self._parse_pyspark_select_block(select_block, i + 1)
+
+                if columns:
+                    dataframe_schemas[result_alias] = columns
+                    logger.debug(f"         Found select schema for '{result_alias}': {len(columns)} columns")
+
+        # Step 2: Parse .withColumn() operations
+        withcol_pattern = r'(\w+)\s*=\s*(\w+)\.withColumn\([\'"]([^\'\"]+)[\'"]\s*,\s*'
+
+        for i, line in enumerate(lines):
+            withcol_match = re.search(withcol_pattern, line, re.IGNORECASE)
+            if withcol_match:
+                result_alias = withcol_match.group(1)
+                source_alias = withcol_match.group(2)
+                new_col_name = withcol_match.group(3)
+
+                # Extract transformation (may be on next line)
+                transformation = self._extract_transformation(lines, i)
+
+                # Copy source schema and add new column
+                source_schema = dataframe_schemas.get(source_alias, [])
+                new_schema = [col.copy() for col in source_schema]
+
+                new_schema.append({
+                    'name': new_col_name,
+                    'type': 'STRING',  # Default type
+                    'order': len(new_schema) + 1,
+                    'source_line': i + 1,
+                    'transformation': transformation
+                })
+
+                dataframe_schemas[result_alias] = new_schema
+                logger.debug(f"         Found withColumn for '{result_alias}': added {new_col_name}")
+
+        # Step 3: Find write operations and map to table names
+        write_patterns = [
+            r'writecsv\([^,]+,\s*(\w+)\s*,\s*[^+]*\+[\'"]([^\'"]+)[\'"]\+',
+            r'(\w+)\.write.*?\.save\([^+]*\+[\'"]([^\'"]+)[\'"]\)',
+            r'(\w+)\.write.*?\.saveAsTable\([\'"]([^\'"]+)[\'"]\)',
+        ]
+
+        for i, line in enumerate(lines):
+            for pattern in write_patterns:
+                write_match = re.search(pattern, line, re.IGNORECASE)
+                if write_match:
+                    df_alias = write_match.group(1)
+                    path_or_table = write_match.group(2)
+
+                    # Extract table name from path
+                    table_name = None
+                    if '/' in path_or_table:
+                        parts = [p.strip() for p in path_or_table.split('/') if p.strip()]
+                        for part in reversed(parts):
+                            if part and len(part) > 2 and not re.match(r'^\d{6,8}$', part):
+                                table_name = part
+                                break
+                    else:
+                        table_name = path_or_table
+
+                    if table_name:
+                        schema = dataframe_schemas.get(df_alias, [])
+                        if schema:
+                            table_schemas[table_name] = schema
+                            logger.info(f"      ✅ Extracted schema for table '{table_name}': {len(schema)} columns")
+                        else:
+                            logger.warning(f"      ⚠ No schema found for DataFrame '{df_alias}' (table: {table_name})")
+
+        logger.info(f"   ✅ Extracted {len(table_schemas)} table schemas from Databricks notebook")
+        return table_schemas
+
+    def _extract_select_block(self, lines: List[str], start_line: int) -> str:
+        """Extract multi-line select block"""
+        block = lines[start_line]
+        paren_count = block.count('(') - block.count(')')
+
+        i = start_line + 1
+        while i < len(lines) and paren_count > 0:
+            block += ' ' + lines[i].strip()
+            paren_count += lines[i].count('(') - lines[i].count(')')
+            i += 1
+
+        return block
+
+    def _parse_pyspark_select_block(self, select_block: str, source_line: int) -> List[Dict[str, Any]]:
+        """Parse PySpark select block to extract columns"""
+        import re
+
+        columns = []
+
+        # Extract content between .select( and final )
+        select_match = re.search(r'\.select\((.*)\)$', select_block, re.DOTALL)
+        if not select_match:
+            return columns
+
+        select_content = select_match.group(1)
+
+        # Split by commas (handling nested parentheses)
+        parts = []
+        current = ""
+        paren_depth = 0
+
+        for char in select_content:
+            if char == '(':
+                paren_depth += 1
+            elif char == ')':
+                paren_depth -= 1
+            elif char == ',' and paren_depth == 0:
+                parts.append(current.strip())
+                current = ""
+                continue
+
+            current += char
+
+        if current.strip():
+            parts.append(current.strip())
+
+        # Parse each field
+        for idx, part in enumerate(parts):
+            # Pattern 1: col("value").substr(1,64).alias("ID")
+            # Pattern 2: trim(col("field")).alias("field")
+            # Pattern 3: "*" (all columns)
+
+            if part.strip() == '*':
+                continue  # Skip wildcard
+
+            alias_match = re.search(r'\.alias\([\'"]([^\'\"]+)[\'"]\)', part, re.IGNORECASE)
+            if alias_match:
+                col_name = alias_match.group(1)
+                transformation = part[:alias_match.start()].strip()
+            else:
+                # Try to extract from col("name")
+                col_match = re.search(r'col\([\'"]([^\'\"]+)[\'"]\)', part)
+                if col_match:
+                    col_name = col_match.group(1)
+                else:
+                    col_name = f"field_{idx+1}"
+
+                transformation = part.strip()
+
+            columns.append({
+                'name': col_name,
+                'type': 'STRING',  # Default type
+                'order': idx + 1,
+                'source_line': source_line,
+                'transformation': transformation
+            })
+
+        return columns
+
+    def _extract_transformation(self, lines: List[str], start_line: int) -> str:
+        """Extract transformation expression from withColumn"""
+        # Start from the withColumn line and extract until closing paren
+        transformation = lines[start_line]
+        paren_count = transformation.count('(') - transformation.count(')')
+
+        i = start_line + 1
+        while i < len(lines) and paren_count > 0:
+            transformation += ' ' + lines[i].strip()
+            paren_count += lines[i].count('(') - lines[i].count(')')
+            i += 1
+
+        # Extract just the transformation part (after column name)
+        withcol_match = re.search(r'\.withColumn\([^,]+,\s*(.+)\)\s*$', transformation)
+        if withcol_match:
+            return withcol_match.group(1).strip()
+        else:
+            return transformation.strip()
+
     def _extract_transformations_from_activity(self, activity: Dict[str, Any]) -> List[str]:
         """Extract transformation descriptions from activity"""
         transformations = []
@@ -902,6 +1128,26 @@ CRITICAL: Provide EXHAUSTIVE detail. Aim for 10-30 step-by-step logic items and 
                 step_count = len(enriched_info.get('step_by_step_logic', []))
                 snippet_count = len(enriched_info.get('code_snippets', []))
                 logger.info(f"   ✅ AI extracted {step_count} steps, {snippet_count} snippets for {notebook_path}")
+
+                # CRITICAL: Extract column-level schemas for STTM generation
+                # Try to get actual file path from first document metadata
+                actual_file_path = None
+                if notebook_docs:
+                    metadata = notebook_docs[0].get('metadata', {})
+                    actual_file_path = metadata.get('file_path', '') or metadata.get('source', '')
+
+                if actual_file_path and Path(actual_file_path).exists():
+                    column_schemas = self.extract_column_schemas_from_notebook(actual_file_path)
+                    if column_schemas:
+                        enriched_info['column_schemas'] = column_schemas
+                        total_columns = sum(len(cols) for cols in column_schemas.values())
+                        logger.info(f"   📋 Extracted {len(column_schemas)} table schemas with {total_columns} total columns")
+                    else:
+                        enriched_info['column_schemas'] = {}
+                else:
+                    logger.debug(f"   No file path found for {notebook_path} - skipping column schema extraction")
+                    enriched_info['column_schemas'] = {}
+
                 return enriched_info
 
             except json.JSONDecodeError as e:

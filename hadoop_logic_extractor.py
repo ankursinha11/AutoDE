@@ -467,6 +467,17 @@ CRITICAL REQUIREMENTS:
                     combined_inputs = list(set(ai_inputs + actual_inputs))
                     script_analysis['inputs'] = combined_inputs
 
+                # CRITICAL: Extract column-level schemas for STTM generation
+                script_type = self._determine_script_type(script_path)
+                column_schemas = self.extract_column_schemas(script_path, script_content, script_type)
+
+                if column_schemas:
+                    script_analysis['column_schemas'] = column_schemas
+                    total_columns = sum(len(cols) for cols in column_schemas.values())
+                    logger.info(f"      📋 Extracted {len(column_schemas)} table schemas with {total_columns} total columns")
+                else:
+                    script_analysis['column_schemas'] = {}
+
                 logger.info(f"      ✅ Deep analysis complete: {len(script_analysis.get('step_by_step_logic', []))} steps, {len(script_analysis.get('code_snippets', []))} snippets")
                 logger.info(f"      📊 Tables: {len(script_analysis.get('inputs', []))} inputs, {len(script_analysis.get('outputs', []))} outputs")
                 return script_analysis
@@ -797,6 +808,489 @@ CRITICAL REQUIREMENTS:
         # Remove duplicates and return
         unique_outputs = list(set(outputs))
         return unique_outputs[:15]  # Limit to 15 unique outputs
+
+    def _extract_column_schemas_from_pig(self, content: str, script_name: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract column-level schemas from Pig scripts for STTM generation
+
+        Returns:
+            {
+                'permIdPatientAcctId': [
+                    {'name': 'PermId', 'type': 'chararray', 'order': 1, 'source_line': 102, 'transformation': '...'},
+                    {'name': 'PatientAcctId', 'type': 'chararray', 'order': 2, 'source_line': 102, 'transformation': '...'},
+                    ...
+                ],
+                'allDistinctRecs': [...]
+            }
+        """
+        import re
+        from typing import Dict, List, Any
+
+        logger.info(f"   🔍 Extracting column schemas from Pig script: {script_name}")
+
+        table_schemas = {}
+        lines = content.split('\n')
+
+        # Step 1: Parse LOAD statements to get input schemas
+        # Pattern: LOAD 'path' AS (field1:type, field2:type, ...)
+        load_schemas = {}
+        load_pattern = r'(\w+)\s*=\s*LOAD\s+[^)]+AS\s*\(\s*([^)]+)\)'
+
+        for i, line in enumerate(lines):
+            load_match = re.search(load_pattern, line, re.IGNORECASE | re.DOTALL)
+            if load_match:
+                alias = load_match.group(1)
+                schema_str = load_match.group(2)
+
+                # Parse schema: field1:type, field2:type, ...
+                columns = []
+                field_parts = [f.strip() for f in schema_str.split(',')]
+
+                for idx, field_part in enumerate(field_parts):
+                    if ':' in field_part:
+                        field_name, field_type = field_part.split(':', 1)
+                        columns.append({
+                            'name': field_name.strip(),
+                            'type': field_type.strip(),
+                            'order': idx + 1,
+                            'source_line': i + 1
+                        })
+
+                load_schemas[alias] = columns
+                logger.debug(f"      Found LOAD schema for '{alias}': {len(columns)} columns")
+
+        # Step 2: Parse FOREACH statements to track transformations
+        # Pattern: alias = FOREACH src GENERATE field1, field2 AS alias2, ...
+        foreach_schemas = {}
+        foreach_pattern = r'(\w+)\s*=\s*(?:FOREACH|foreach)\s+(\w+)\s+(?:GENERATE|generate)\s+(.+?)(?:;|$)'
+
+        for i, line in enumerate(lines):
+            foreach_match = re.search(foreach_pattern, line, re.IGNORECASE)
+            if foreach_match:
+                alias = foreach_match.group(1)
+                source_alias = foreach_match.group(2)
+                generate_fields = foreach_match.group(3)
+
+                # Parse generated fields
+                columns = []
+                field_parts = [f.strip() for f in generate_fields.split(',')]
+
+                source_schema = load_schemas.get(source_alias, foreach_schemas.get(source_alias, []))
+
+                for idx, field_part in enumerate(field_parts):
+                    # Handle various GENERATE formats:
+                    # - field_name
+                    # - $0
+                    # - TRIM($0) as PatientAcctId
+                    # - field_name as alias
+
+                    # Extract column name and transformation
+                    as_match = re.search(r'\s+as\s+(\w+)', field_part, re.IGNORECASE)
+                    if as_match:
+                        col_name = as_match.group(1)
+                        transformation = field_part[:as_match.start()].strip()
+                    else:
+                        # Simple field reference
+                        col_name = field_part.strip().replace('$', 'field')
+                        transformation = field_part.strip()
+
+                    # Try to infer type from source schema
+                    col_type = 'chararray'  # Default
+                    for src_col in source_schema:
+                        if src_col['name'] == col_name or f"${idx}" in transformation:
+                            col_type = src_col.get('type', 'chararray')
+                            break
+
+                    columns.append({
+                        'name': col_name,
+                        'type': col_type,
+                        'order': idx + 1,
+                        'source_line': i + 1,
+                        'transformation': transformation
+                    })
+
+                foreach_schemas[alias] = columns
+                logger.debug(f"      Found FOREACH schema for '{alias}': {len(columns)} columns")
+
+        # Step 3: Parse STORE statements and map to final schemas
+        # Pattern: STORE alias INTO 'path' [USING ...]
+        store_pattern = r'(?:STORE|store)\s+(\w+)\s+(?:INTO|into)\s+[\'"]([^\'"]+)[\'"]'
+
+        for i, line in enumerate(lines):
+            store_match = re.search(store_pattern, line, re.IGNORECASE)
+            if store_match:
+                source_alias = store_match.group(1)
+                path = store_match.group(2)
+
+                # Extract table name from path
+                cleaned = re.sub(r'\$\w+', '', path)
+                parts = [p.strip() for p in cleaned.split('/') if p.strip()]
+
+                table_name = None
+                for part in reversed(parts):
+                    if part and len(part) > 2 and not re.match(r'^\d{6,8}$', part):
+                        table_name = part
+                        break
+
+                if table_name:
+                    # Get schema from FOREACH or LOAD
+                    schema = foreach_schemas.get(source_alias) or load_schemas.get(source_alias, [])
+
+                    if schema:
+                        table_schemas[table_name] = schema
+                        logger.info(f"      ✅ Extracted schema for table '{table_name}': {len(schema)} columns")
+                    else:
+                        logger.warning(f"      ⚠ No schema found for alias '{source_alias}' (table: {table_name})")
+
+        logger.info(f"   ✅ Extracted {len(table_schemas)} table schemas from {script_name}")
+        return table_schemas
+
+    def _extract_column_schemas_from_pyspark(self, content: str, script_name: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract column-level schemas from PySpark/Databricks scripts for STTM generation
+
+        Returns:
+            {
+                'table_name': [
+                    {'name': 'HospitalFk', 'type': 'SHORT', 'order': 1, 'source_line': 115, 'transformation': '...'},
+                    ...
+                ]
+            }
+        """
+        import re
+        from typing import Dict, List, Any
+
+        logger.info(f"   🔍 Extracting column schemas from PySpark script: {script_name}")
+
+        table_schemas = {}
+        lines = content.split('\n')
+
+        # Track DataFrame transformations
+        dataframe_schemas = {}
+
+        # Step 1: Find read operations and extract initial schemas
+        read_patterns = [
+            r'(\w+)\s*=\s*spark\.read\.',
+            r'(\w+)\s*=\s*sqlContext\.read\.',
+        ]
+
+        # Step 2: Parse .select() operations to track column schemas
+        # Pattern: df.select(col("field1").alias("alias1"), col("field2"), ...)
+        select_pattern = r'(\w+)\s*=\s*(\w+)\.select\(([^)]+)\)'
+
+        for i, line in enumerate(lines):
+            select_match = re.search(select_pattern, line, re.IGNORECASE)
+            if select_match:
+                result_alias = select_match.group(1)
+                source_alias = select_match.group(2)
+                select_fields = select_match.group(3)
+
+                columns = []
+                # Parse select fields - handle various patterns
+                # - col("field").alias("alias")
+                # - "field"
+                # - trim(col("field")).alias("alias")
+
+                # Multi-line select (common in PySpark)
+                full_select = select_fields
+                # Check if continuation exists in next lines
+                j = i + 1
+                while j < len(lines) and ')' not in lines[j]:
+                    full_select += ' ' + lines[j].strip()
+                    j += 1
+
+                # Extract field references
+                field_parts = self._parse_pyspark_select_fields(full_select)
+
+                for idx, field_info in enumerate(field_parts):
+                    columns.append({
+                        'name': field_info['name'],
+                        'type': field_info.get('type', 'STRING'),  # Default to STRING
+                        'order': idx + 1,
+                        'source_line': i + 1,
+                        'transformation': field_info['transformation']
+                    })
+
+                dataframe_schemas[result_alias] = columns
+                logger.debug(f"      Found select schema for '{result_alias}': {len(columns)} columns")
+
+        # Step 3: Parse .withColumn() operations
+        # Pattern: df.withColumn("new_col", split(col("id"), "_").getItem(0))
+        withcol_pattern = r'(\w+)\s*=\s*(\w+)\.withColumn\([\'"]([^\'\"]+)[\'"]\s*,\s*([^)]+)\)'
+
+        for i, line in enumerate(lines):
+            withcol_match = re.search(withcol_pattern, line, re.IGNORECASE)
+            if withcol_match:
+                result_alias = withcol_match.group(1)
+                source_alias = withcol_match.group(2)
+                new_col_name = withcol_match.group(3)
+                transformation = withcol_match.group(4)
+
+                # Copy source schema and add new column
+                source_schema = dataframe_schemas.get(source_alias, [])
+                new_schema = source_schema.copy()
+
+                new_schema.append({
+                    'name': new_col_name,
+                    'type': 'STRING',  # Would need type inference
+                    'order': len(new_schema) + 1,
+                    'source_line': i + 1,
+                    'transformation': transformation.strip()
+                })
+
+                dataframe_schemas[result_alias] = new_schema
+                logger.debug(f"      Found withColumn for '{result_alias}': added {new_col_name}")
+
+        # Step 4: Find write operations and map to table names
+        # Pattern: writecsv(spark, df, path, ...)
+        # Pattern: df.write.format("delta").save(path)
+        # Pattern: df.write.saveAsTable("table_name")
+
+        write_patterns = [
+            r'writecsv\([^,]+,\s*(\w+)\s*,\s*[^+]*\+[\'"]([^\'"]+)[\'"]\+',  # writecsv(spark, df, baseurl+'permIdPatientAcctId/'+bc, ...)
+            r'(\w+)\.write.*?\.save\([^+]*\+[\'"]([^\'"]+)[\'"]\)',
+            r'(\w+)\.write.*?\.saveAsTable\([\'"]([^\'"]+)[\'"]\)',
+        ]
+
+        for i, line in enumerate(lines):
+            for pattern in write_patterns:
+                write_match = re.search(pattern, line, re.IGNORECASE)
+                if write_match:
+                    df_alias = write_match.group(1)
+                    path_or_table = write_match.group(2)
+
+                    # Extract table name from path
+                    table_name = None
+                    if '/' in path_or_table:
+                        parts = [p.strip() for p in path_or_table.split('/') if p.strip()]
+                        for part in reversed(parts):
+                            if part and len(part) > 2 and not re.match(r'^\d{6,8}$', part):
+                                table_name = part
+                                break
+                    else:
+                        table_name = path_or_table
+
+                    if table_name:
+                        schema = dataframe_schemas.get(df_alias, [])
+                        if schema:
+                            table_schemas[table_name] = schema
+                            logger.info(f"      ✅ Extracted schema for table '{table_name}': {len(schema)} columns")
+                        else:
+                            logger.warning(f"      ⚠ No schema found for DataFrame '{df_alias}' (table: {table_name})")
+
+        logger.info(f"   ✅ Extracted {len(table_schemas)} table schemas from PySpark {script_name}")
+        return table_schemas
+
+    def _parse_pyspark_select_fields(self, select_str: str) -> List[Dict[str, Any]]:
+        """Parse PySpark select field list to extract column names and transformations"""
+        import re
+
+        fields = []
+
+        # Split by comma (but not inside function calls)
+        # Simplified approach: split and track parentheses
+        parts = []
+        current = ""
+        paren_depth = 0
+
+        for char in select_str:
+            if char == '(':
+                paren_depth += 1
+            elif char == ')':
+                paren_depth -= 1
+            elif char == ',' and paren_depth == 0:
+                parts.append(current.strip())
+                current = ""
+                continue
+
+            current += char
+
+        if current.strip():
+            parts.append(current.strip())
+
+        # Parse each part
+        for part in parts:
+            # Pattern 1: col("value").substr(1,64).alias("ID")
+            # Pattern 2: "field_name"
+            # Pattern 3: trim(col("field")).alias("field")
+
+            alias_match = re.search(r'\.alias\([\'"]([^\'\"]+)[\'"]\)', part, re.IGNORECASE)
+            if alias_match:
+                col_name = alias_match.group(1)
+                transformation = part[:alias_match.start()].strip()
+            else:
+                # Try to extract field name from quotes
+                quote_match = re.search(r'[\'"]([^\'\"]+)[\'"]', part)
+                if quote_match:
+                    col_name = quote_match.group(1)
+                else:
+                    col_name = part.strip()
+
+                transformation = part.strip()
+
+            fields.append({
+                'name': col_name,
+                'transformation': transformation,
+                'type': 'STRING'  # Default
+            })
+
+        return fields
+
+    def _extract_column_schemas_from_sql(self, content: str, script_name: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract column-level schemas from SQL scripts (Hive/Spark SQL) for STTM generation
+
+        Returns:
+            {
+                'table_name': [
+                    {'name': 'column1', 'type': 'INT', 'order': 1, 'source_line': 10, 'transformation': '...'},
+                    ...
+                ]
+            }
+        """
+        import re
+        from typing import Dict, List, Any
+
+        logger.info(f"   🔍 Extracting column schemas from SQL script: {script_name}")
+
+        table_schemas = {}
+
+        # Pattern 1: INSERT OVERWRITE TABLE table_name SELECT ...
+        # Pattern 2: CREATE TABLE table_name AS SELECT ...
+        # Pattern 3: CREATE TABLE table_name (col1 TYPE, col2 TYPE, ...)
+
+        # Extract CREATE TABLE with explicit schema
+        create_pattern = r'CREATE\s+(?:EXTERNAL\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z_][\w.]*)\s*\(([^)]+)\)'
+
+        lines = content.split('\n')
+        for i, line in enumerate(lines):
+            create_match = re.search(create_pattern, line, re.IGNORECASE | re.DOTALL)
+            if create_match:
+                table_name = create_match.group(1).split('.')[-1]  # Remove schema prefix
+                schema_str = create_match.group(2)
+
+                columns = []
+                col_parts = [c.strip() for c in schema_str.split(',')]
+
+                for idx, col_part in enumerate(col_parts):
+                    # Parse: column_name TYPE [COMMENT '...']
+                    col_match = re.match(r'([a-zA-Z_]\w+)\s+([A-Z]+(?:\([^)]+\))?)', col_part, re.IGNORECASE)
+                    if col_match:
+                        col_name = col_match.group(1)
+                        col_type = col_match.group(2)
+
+                        columns.append({
+                            'name': col_name,
+                            'type': col_type,
+                            'order': idx + 1,
+                            'source_line': i + 1,
+                            'transformation': f'Column definition: {col_part}'
+                        })
+
+                if columns:
+                    table_schemas[table_name] = columns
+                    logger.info(f"      ✅ Extracted schema for table '{table_name}': {len(columns)} columns (CREATE TABLE)")
+
+        # Extract INSERT/CREATE AS SELECT
+        insert_pattern = r'(?:INSERT\s+(?:OVERWRITE|INTO)\s+TABLE|CREATE\s+TABLE\s+[\w.]+\s+AS)\s+SELECT\s+(.+?)\s+FROM'
+
+        for i, line in enumerate(lines):
+            insert_match = re.search(insert_pattern, line, re.IGNORECASE | re.DOTALL)
+            if insert_match:
+                select_fields = insert_match.group(1)
+
+                # Parse SELECT fields
+                columns = []
+                field_parts = [f.strip() for f in select_fields.split(',')]
+
+                for idx, field_part in enumerate(field_parts):
+                    # Handle: field_name, CAST(field AS TYPE), field AS alias
+                    as_match = re.search(r'\s+AS\s+(\w+)', field_part, re.IGNORECASE)
+                    if as_match:
+                        col_name = as_match.group(1)
+                        transformation = field_part[:as_match.start()].strip()
+                    else:
+                        col_name = field_part.strip().split('.')[-1]  # Remove table prefix
+                        transformation = field_part.strip()
+
+                    # Try to infer type from CAST
+                    type_match = re.search(r'CAST\([^)]+\s+AS\s+([A-Z]+(?:\([^)]+\))?)\)', transformation, re.IGNORECASE)
+                    col_type = type_match.group(1) if type_match else 'STRING'
+
+                    columns.append({
+                        'name': col_name,
+                        'type': col_type,
+                        'order': idx + 1,
+                        'source_line': i + 1,
+                        'transformation': transformation
+                    })
+
+                # Note: Would need to track INSERT TABLE name from earlier in content
+                logger.debug(f"      Found SELECT with {len(columns)} columns (line {i+1})")
+
+        logger.info(f"   ✅ Extracted {len(table_schemas)} table schemas from SQL {script_name}")
+        return table_schemas
+
+    def _determine_script_type(self, script_path: str) -> str:
+        """Determine script type from file extension"""
+        if script_path.endswith('.pig'):
+            return 'pig'
+        elif script_path.endswith('.py'):
+            return 'python'
+        elif script_path.endswith(('.sql', '.hql')):
+            return 'sql'
+        elif script_path.endswith('.sh'):
+            return 'shell'
+        else:
+            return 'unknown'
+
+    def extract_column_schemas(self, script_path: str, script_content: str, script_type: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Unified column schema extractor for all Hadoop script types
+
+        Args:
+            script_path: Path to script file
+            script_content: Content of script
+            script_type: Type of script (pig, pyspark, sql, shell, etc.)
+
+        Returns:
+            Dictionary mapping table names to column schemas
+        """
+        script_name = Path(script_path).name
+
+        if script_type == 'pig' or script_path.endswith('.pig'):
+            return self._extract_column_schemas_from_pig(script_content, script_name)
+
+        elif script_type in ['pyspark', 'spark', 'python'] or script_path.endswith('.py'):
+            # Check if it's actually PySpark (contains spark.read, DataFrame operations)
+            if 'spark.read' in script_content or 'DataFrame' in script_content or 'pyspark' in script_content:
+                return self._extract_column_schemas_from_pyspark(script_content, script_name)
+            else:
+                # Pure Python - limited schema extraction
+                logger.debug(f"      Pure Python script - limited schema extraction")
+                return {}
+
+        elif script_type in ['sql', 'hql', 'hive'] or script_path.endswith(('.sql', '.hql')):
+            return self._extract_column_schemas_from_sql(script_content, script_name)
+
+        elif script_type == 'shell' or script_path.endswith('.sh'):
+            # Shell scripts may have embedded SQL/Pig - try to detect
+            if 'pig -f' in script_content or 'LOAD' in script_content:
+                # Embedded Pig
+                return self._extract_column_schemas_from_pig(script_content, script_name)
+            elif 'hive -e' in script_content or 'CREATE TABLE' in script_content:
+                # Embedded SQL
+                return self._extract_column_schemas_from_sql(script_content, script_name)
+            else:
+                logger.debug(f"      Shell script - no SQL/Pig detected")
+                return {}
+
+        else:
+            logger.debug(f"      Unknown script type: {script_type}")
+            return {}
+
+        logger.info(f"   ✅ Extracted {len(table_schemas)} table schemas from {script_name}")
+        return table_schemas
 
     def _extract_logic_fallback(self, workflow_name: str) -> Dict[str, Any]:
         """Fallback extraction when scripts cannot be found"""

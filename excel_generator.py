@@ -612,299 +612,388 @@ class ExcelGenerator:
         databricks_logic: Dict[str, Any]
     ):
         """
-        Create 3 STTM sheets as requested:
-        1. Source System STTM (e.g., Hadoop cdd: bdf_download)
-        2. Target System STTM (e.g., Databricks pl_cdd_bdf_download)
-        3. STTM Comparison (column-level mapping)
+        Create SINGLE STTM sheet with 3 sections (matching manual gold standard):
+        Section 1: Databricks (Target) column-level schema
+        Section 2: Source System (Hadoop/Ab Initio) column-level schema
+        Section 3: Side-by-side comparison
         """
-        # Sheet 1: Source System STTM
-        source_workflow = source_logic.get('workflow_name', 'Source')
-        self._create_source_sttm_sheet(wb, source_logic, source_system, source_workflow)
+        ws = wb.create_sheet("STTM")
 
-        # Sheet 2: Target System STTM
-        target_workflow = databricks_logic.get('pipeline_name', 'Target')
-        self._create_target_sttm_sheet(wb, databricks_logic, target_workflow)
+        # Section 1: Databricks (Rows 1-N)
+        current_row = self._create_databricks_sttm_section(
+            ws,
+            databricks_logic,
+            start_row=1
+        )
 
-        # Sheet 3: STTM Comparison
-        self._create_sttm_comparison_sheet(wb, sttm_mappings, source_system, source_workflow, target_workflow)
+        # Blank row between sections
+        current_row += 1
 
-    def _create_source_sttm_sheet(
-        self,
-        wb: Workbook,
-        source_logic: Dict[str, Any],
-        source_system: str,
-        workflow_name: str
-    ):
-        """Create Source System STTM sheet (tables/columns from source system)"""
-        ws = wb.create_sheet(f"Source STTM ({source_system.upper()})")
+        # Section 2: Source System (Rows N+1 - M)
+        current_row = self._create_source_sttm_section(
+            ws,
+            source_logic,
+            source_system,
+            start_row=current_row
+        )
 
-        # Title
-        ws['A1'] = f"Source System STTM - {workflow_name}"
-        ws['A1'].font = Font(bold=True, size=14)
-        ws.merge_cells('A1:M1')
+        # Blank row between sections
+        current_row += 1
 
-        # Headers (same 13-column format)
-        headers = [
-            'Order',                 # 1
-            'Schema',                # 2
-            'Table Name',            # 3
-            'Column Name',           # 4
-            'Data Type',             # 5
-            'pk?',                   # 6
-            'PII?',                  # 7
-            'Field Type',            # 8
-            'Depends On',            # 9
-            'Transformation',        # 10
-            'Source Script',         # 11
-            'Source Line',           # 12
-            'Description'            # 13
-        ]
-
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=3, column=col, value=header)
-            cell.font = self.header_font
-            cell.fill = self.header_fill
-            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-            cell.border = self.border
-
-        # Extract tables from source logic outputs
-        row_idx = 4
-        order = 1
-
-        jobs = source_logic.get('jobs', [])
-        for job in jobs:
-            script_name = job.get('script_file', job.get('name', 'Unknown'))
-            outputs = job.get('outputs', [])
-
-            for table_name in outputs:
-                # Add row for each output table
-                # NOTE: We don't have column-level schema here, so we'll add table-level entries
-                ws.cell(row=row_idx, column=1, value=order)
-                ws.cell(row=row_idx, column=2, value=source_logic.get('workflow_name', ''))
-                ws.cell(row=row_idx, column=3, value=table_name)
-                ws.cell(row=row_idx, column=4, value='(See columns below)')
-                ws.cell(row=row_idx, column=5, value='TABLE')
-                ws.cell(row=row_idx, column=6, value='')
-                ws.cell(row=row_idx, column=7, value='')
-                ws.cell(row=row_idx, column=8, value='Output Table')
-                ws.cell(row=row_idx, column=9, value='')
-                ws.cell(row=row_idx, column=10, value='')
-                ws.cell(row=row_idx, column=11, value=script_name)
-                ws.cell(row=row_idx, column=12, value='')
-                ws.cell(row=row_idx, column=13, value=f"Output table from {script_name}")
-
-                # Formatting
-                for col in range(1, 14):
-                    cell = ws.cell(row=row_idx, column=col)
-                    cell.border = self.border
-                    cell.alignment = Alignment(vertical='top', wrap_text=True)
-
-                row_idx += 1
-                order += 1
-
-        # If no outputs found, show message
-        if row_idx == 4:
-            ws.cell(row=4, column=1, value="No source tables extracted")
-            ws.merge_cells('A4:M4')
+        # Section 3: Comparison (Rows M+1 - end)
+        self._create_sttm_comparison_section(
+            ws,
+            sttm_mappings,
+            source_system,
+            source_logic,
+            databricks_logic,
+            start_row=current_row
+        )
 
         # Column widths
         self._set_sttm_column_widths(ws)
-        ws.freeze_panes = 'A4'
+        ws.freeze_panes = 'A3'  # Freeze first section header
 
-    def _create_target_sttm_sheet(
+    def _create_databricks_sttm_section(
         self,
-        wb: Workbook,
+        ws,
         databricks_logic: Dict[str, Any],
-        workflow_name: str
-    ):
-        """Create Target System STTM sheet (tables/columns from Databricks)"""
-        ws = wb.create_sheet("Target STTM (Databricks)")
+        start_row: int
+    ) -> int:
+        """
+        Create Databricks (Target) STTM section with column-level schemas
 
-        # Title
-        ws['A1'] = f"Target System STTM - {workflow_name}"
-        ws['A1'].font = Font(bold=True, size=14)
-        ws.merge_cells('A1:M1')
+        Returns:
+            Next available row number
+        """
+        logger.info("Creating Databricks STTM section...")
 
-        # Headers
+        # Row 1: Section title
+        ws.cell(row=start_row, column=1, value="Databricks")
+        ws.cell(row=start_row, column=1).font = Font(bold=True, size=14)
+        ws.merge_cells(f'A{start_row}:M{start_row}')
+
+        # Row 2: Headers (13-column format)
+        header_row = start_row + 1
         headers = [
-            'Order',                 # 1
-            'Schema',                # 2
-            'Table Name',            # 3
-            'Column Name',           # 4
-            'Data Type',             # 5
-            'pk?',                   # 6
-            'PII?',                  # 7
-            'Field Type',            # 8
-            'Depends On',            # 9
-            'Transformation',        # 10
-            'Source Activity',       # 11
-            'Notebook Path',         # 12
-            'Description'            # 13
+            'Processing Order',
+            'Schema',
+            'Target Table Name',
+            'Target Field Name',
+            'Target Field Data Type',
+            'pk?',
+            'contains_pii',
+            'Field Type',
+            'Field Depends On',
+            'Pre Processing Rules',
+            'Source Field Names',
+            'Source Dataset Name',
+            'Field Definition'
         ]
 
         for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=3, column=col, value=header)
+            cell = ws.cell(row=header_row, column=col, value=header)
             cell.font = self.header_font
             cell.fill = self.header_fill
             cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
             cell.border = self.border
 
-        # Extract tables from Databricks activities
-        row_idx = 4
+        # Row 3+: Column-level data from Databricks activities
+        current_row = header_row + 1
         order = 1
 
         activities = databricks_logic.get('activities', [])
         for activity in activities:
             activity_name = activity.get('name', 'Unknown')
             notebook_path = activity.get('notebook', '')
-            outputs = activity.get('outputs', [])
+            column_schemas = activity.get('column_schemas', {})
 
-            for output in outputs:
-                # Add row for each output
-                ws.cell(row=row_idx, column=1, value=order)
-                ws.cell(row=row_idx, column=2, value=databricks_logic.get('pipeline_name', ''))
-                ws.cell(row=row_idx, column=3, value=output)
-                ws.cell(row=row_idx, column=4, value='(See columns below)')
-                ws.cell(row=row_idx, column=5, value='TABLE')
-                ws.cell(row=row_idx, column=6, value='')
-                ws.cell(row=row_idx, column=7, value='')
-                ws.cell(row=row_idx, column=8, value='Output Table')
-                ws.cell(row=row_idx, column=9, value='')
-                ws.cell(row=row_idx, column=10, value='')
-                ws.cell(row=row_idx, column=11, value=activity_name)
-                ws.cell(row=row_idx, column=12, value=notebook_path)
-                ws.cell(row=row_idx, column=13, value=f"Output from {activity_name}")
+            # Process each table and its columns
+            for table_name, columns in column_schemas.items():
+                for col_info in columns:
+                    col_name = col_info.get('name', '')
+                    col_type = col_info.get('type', 'STRING')
+                    transformation = col_info.get('transformation', '')
+                    source_line = col_info.get('source_line', '')
 
-                # Formatting
-                for col in range(1, 14):
-                    cell = ws.cell(row=row_idx, column=col)
-                    cell.border = self.border
-                    cell.alignment = Alignment(vertical='top', wrap_text=True)
+                    # Write row
+                    ws.cell(row=current_row, column=1, value=order)
+                    ws.cell(row=current_row, column=2, value='DATABRICKS_BDF')
+                    ws.cell(row=current_row, column=3, value=table_name)
+                    ws.cell(row=current_row, column=4, value=col_name)
+                    ws.cell(row=current_row, column=5, value=col_type)
+                    ws.cell(row=current_row, column=6, value='False')  # Would need PK detection
+                    ws.cell(row=current_row, column=7, value='False')  # Would need PII detection
+                    ws.cell(row=current_row, column=8, value='Data Field')
+                    ws.cell(row=current_row, column=9, value='')  # Dependencies
+                    ws.cell(row=current_row, column=10, value=f'ACTIVITY: {activity_name}. {transformation}')
+                    ws.cell(row=current_row, column=11, value=transformation)
+                    ws.cell(row=current_row, column=12, value=notebook_path)
+                    ws.cell(row=current_row, column=13, value=f'Field from {activity_name}')
 
-                row_idx += 1
-                order += 1
+                    # Apply formatting
+                    for col_idx in range(1, 14):
+                        cell = ws.cell(row=current_row, column=col_idx)
+                        cell.border = self.border
+                        cell.alignment = Alignment(vertical='top', wrap_text=True)
 
-        # If no outputs found, show message
-        if row_idx == 4:
-            ws.cell(row=4, column=1, value="No target tables extracted")
-            ws.merge_cells('A4:M4')
+                    current_row += 1
+                    order += 1
 
-        # Column widths
-        self._set_sttm_column_widths(ws)
-        ws.freeze_panes = 'A4'
+        # If no column schemas found, show message
+        if current_row == header_row + 1:
+            ws.cell(row=current_row, column=1, value="No Databricks column schemas extracted")
+            ws.merge_cells(f'A{current_row}:M{current_row}')
+            current_row += 1
 
-    def _create_sttm_comparison_sheet(
+        logger.info(f"   Databricks STTM section: {current_row - header_row - 1} column rows")
+        return current_row
+
+    def _create_source_sttm_section(
         self,
-        wb: Workbook,
-        sttm_mappings: List[Dict[str, Any]],
+        ws,
+        source_logic: Dict[str, Any],
         source_system: str,
-        source_workflow: str,
-        target_workflow: str
-    ):
-        """Create STTM Comparison sheet (column-level mappings)"""
-        ws = wb.create_sheet("STTM Comparison")
+        start_row: int
+    ) -> int:
+        """
+        Create Source System (Hadoop/Ab Initio) STTM section with column-level schemas
 
-        # Title
-        ws['A1'] = f"STTM Comparison: {source_workflow} → {target_workflow}"
-        ws['A1'].font = Font(bold=True, size=14)
-        ws.merge_cells('A1:M1')
+        Returns:
+            Next available row number
+        """
+        logger.info(f"Creating {source_system} STTM section...")
 
-        # 13-column headers matching manual comparison format
+        # Row 1: Section title
+        ws.cell(row=start_row, column=1, value=source_system.upper())
+        ws.cell(row=start_row, column=1).font = Font(bold=True, size=14)
+        ws.merge_cells(f'A{start_row}:M{start_row}')
+
+        # Row 2: Headers (same 13-column format)
+        header_row = start_row + 1
         headers = [
-            'Processing Order',      # 1
-            'Schema',                # 2
-            'Target Table',          # 3
-            'Target Field',          # 4
-            'Data Type',             # 5
-            'pk?',                   # 6
-            'contains_pii',          # 7
-            'Field Type',            # 8
-            'Field Depends On',      # 9
-            'Pre Processing Rules',  # 10
-            'Source Field Names',    # 11
-            'Source Dataset',        # 12
-            'Field Definition'       # 13
+            'Processing Order',
+            'Schema',
+            'Table Name',
+            'Field Name',
+            'Field Data Type',
+            'pk?',
+            'contains_pii',
+            'Field Type',
+            'Field Depends On',
+            'Pre Processing Rules',
+            'Source Field Names',
+            'Source Script Name',
+            'Field Definition'
         ]
 
         for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=3, column=col, value=header)
+            cell = ws.cell(row=header_row, column=col, value=header)
             cell.font = self.header_font
             cell.fill = self.header_fill
             cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
             cell.border = self.border
 
-        # Data rows
-        for row_idx, mapping in enumerate(sttm_mappings, 4):
-            # Column 1: Processing Order
-            ws.cell(row=row_idx, column=1, value=mapping.get('processing_order', row_idx - 3))
+        # Row 3+: Column-level data from source scripts
+        current_row = header_row + 1
+        order = 1
 
-            # Column 2: Schema
-            ws.cell(row=row_idx, column=2, value=mapping.get('schema', ''))
+        jobs = source_logic.get('jobs', [])
+        for job in jobs:
+            script_name = job.get('script_file', job.get('name', 'Unknown'))
+            column_schemas = job.get('column_schemas', {})
 
-            # Column 3: Target Table
-            ws.cell(row=row_idx, column=3, value=mapping.get('target_table', ''))
+            # Process each table and its columns
+            for table_name, columns in column_schemas.items():
+                for col_info in columns:
+                    col_name = col_info.get('name', '')
+                    col_type = col_info.get('type', 'chararray')
+                    transformation = col_info.get('transformation', '')
+                    source_line = col_info.get('source_line', '')
 
-            # Column 4: Target Field
-            ws.cell(row=row_idx, column=4, value=mapping.get('target_field', ''))
+                    # Write row
+                    ws.cell(row=current_row, column=1, value=order)
+                    ws.cell(row=current_row, column=2, value=source_logic.get('workflow_name', 'ES_BDF'))
+                    ws.cell(row=current_row, column=3, value=table_name)
+                    ws.cell(row=current_row, column=4, value=col_name)
+                    ws.cell(row=current_row, column=5, value=col_type)
+                    ws.cell(row=current_row, column=6, value='False')  # Would need PK detection
+                    ws.cell(row=current_row, column=7, value='False')  # Would need PII detection
+                    ws.cell(row=current_row, column=8, value='Data Field')
+                    ws.cell(row=current_row, column=9, value='')  # Dependencies
+                    ws.cell(row=current_row, column=10, value=transformation)
+                    ws.cell(row=current_row, column=11, value=col_name)
+                    ws.cell(row=current_row, column=12, value=script_name)
+                    ws.cell(row=current_row, column=13, value=f'Field from {script_name}')
 
-            # Column 5: Data Type
-            ws.cell(row=row_idx, column=5, value=mapping.get('data_type', ''))
+                    # Apply formatting
+                    for col_idx in range(1, 14):
+                        cell = ws.cell(row=current_row, column=col_idx)
+                        cell.border = self.border
+                        cell.alignment = Alignment(vertical='top', wrap_text=True)
 
-            # Column 6: pk? (is_primary_key)
-            is_pk = mapping.get('is_pk', False)
-            ws.cell(row=row_idx, column=6, value='Yes' if is_pk else 'No')
+                    current_row += 1
+                    order += 1
 
-            # Column 7: contains_pii
-            contains_pii = mapping.get('contains_pii', False)
-            ws.cell(row=row_idx, column=7, value='Yes' if contains_pii else 'No')
+        # If no column schemas found, show message
+        if current_row == header_row + 1:
+            ws.cell(row=current_row, column=1, value=f"No {source_system} column schemas extracted")
+            ws.merge_cells(f'A{current_row}:M{current_row}')
+            current_row += 1
 
-            # Column 8: Field Type
-            ws.cell(row=row_idx, column=8, value=mapping.get('field_type', ''))
+        logger.info(f"   {source_system} STTM section: {current_row - header_row - 1} column rows")
+        return current_row
 
-            # Column 9: Field Depends On
-            depends_on = mapping.get('field_depends_on', [])
-            if isinstance(depends_on, list):
-                depends_on_str = ', '.join(depends_on)
-            else:
-                depends_on_str = str(depends_on) if depends_on else ''
-            ws.cell(row=row_idx, column=9, value=depends_on_str)
+    def _create_sttm_comparison_section(
+        self,
+        ws,
+        sttm_mappings: List[Dict[str, Any]],
+        source_system: str,
+        source_logic: Dict[str, Any],
+        databricks_logic: Dict[str, Any],
+        start_row: int
+    ):
+        """
+        Create STTM Comparison section with side-by-side field mappings
 
-            # Column 10: Pre Processing Rules (CRITICAL - must include activity name + formula)
-            pre_processing = mapping.get('pre_processing_rules', '')
-            ws.cell(row=row_idx, column=10, value=pre_processing)
+        This is a 4-column format (different from sections 1-2):
+        - Feature
+        - Databricks Transformation
+        - Hadoop/Ab Initio Transformation
+        - Comparison Summary
+        """
+        logger.info("Creating STTM Comparison section...")
 
-            # Column 11: Source Field Names
-            source_fields = mapping.get('source_field_names', '')
-            if isinstance(source_fields, list):
-                source_fields = ', '.join(source_fields)
-            ws.cell(row=row_idx, column=11, value=source_fields)
+        # Row 1: Section title (blank for spacing - comparison starts directly)
+        header_row = start_row
+        headers = [
+            'Feature',
+            'Databricks Transformation',
+            f'{source_system} Transformation',
+            'Comparison Summary'
+        ]
 
-            # Column 12: Source Dataset
-            ws.cell(row=row_idx, column=12, value=mapping.get('source_dataset', ''))
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=header_row, column=col, value=header)
+            cell.font = self.header_font
+            cell.fill = self.header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            cell.border = self.border
 
-            # Column 13: Field Definition
-            ws.cell(row=row_idx, column=13, value=mapping.get('field_definition', ''))
+        # Clear extra columns (comparison only uses 4 columns)
+        for col in range(5, 14):
+            cell = ws.cell(row=header_row, column=col, value='')
 
-            # Formatting
-            for col in range(1, 14):
-                cell = ws.cell(row=row_idx, column=col)
+        # Comparison rows
+        current_row = header_row + 1
+
+        # Generate comparison from column schemas
+        # Match tables/columns between Databricks and Source
+        comparisons = self._generate_column_comparisons(
+            source_logic,
+            databricks_logic,
+            source_system
+        )
+
+        for comparison in comparisons:
+            ws.cell(row=current_row, column=1, value=comparison.get('feature', ''))
+            ws.cell(row=current_row, column=2, value=comparison.get('databricks_transformation', ''))
+            ws.cell(row=current_row, column=3, value=comparison.get('source_transformation', ''))
+            ws.cell(row=current_row, column=4, value=comparison.get('summary', ''))
+
+            # Apply formatting
+            for col_idx in range(1, 5):
+                cell = ws.cell(row=current_row, column=col_idx)
                 cell.border = self.border
                 cell.alignment = Alignment(vertical='top', wrap_text=True)
 
-            # Center align processing order
-            ws.cell(row=row_idx, column=1).alignment = Alignment(horizontal='center', vertical='top')
+            current_row += 1
 
-            # Color code PII columns
-            if contains_pii:
-                ws.cell(row=row_idx, column=7).fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        # If no comparisons, show message
+        if not comparisons:
+            ws.cell(row=current_row, column=1, value="No column-level comparisons generated")
+            ws.merge_cells(f'A{current_row}:D{current_row}')
 
-            # Color code primary keys
-            if is_pk:
-                ws.cell(row=row_idx, column=6).fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+        logger.info(f"   Comparison section: {len(comparisons)} comparison rows")
 
-        # Column widths
-        self._set_sttm_column_widths(ws)
-        ws.freeze_panes = 'A4'
+    def _generate_column_comparisons(
+        self,
+        source_logic: Dict[str, Any],
+        databricks_logic: Dict[str, Any],
+        source_system: str
+    ) -> List[Dict[str, Any]]:
+        """Generate field-level comparisons between source and Databricks"""
+        comparisons = []
+
+        # Build dictionaries of all column schemas
+        source_columns = {}
+        databricks_columns = {}
+
+        # Extract source columns
+        jobs = source_logic.get('jobs', [])
+        for job in jobs:
+            column_schemas = job.get('column_schemas', {})
+            for table_name, columns in column_schemas.items():
+                for col_info in columns:
+                    col_name = col_info.get('name', '')
+                    key = f"{table_name}.{col_name}"
+                    source_columns[key] = {
+                        'table': table_name,
+                        'column': col_name,
+                        'type': col_info.get('type', ''),
+                        'transformation': col_info.get('transformation', ''),
+                        'script': job.get('script_file', '')
+                    }
+
+        # Extract Databricks columns
+        activities = databricks_logic.get('activities', [])
+        for activity in activities:
+            column_schemas = activity.get('column_schemas', {})
+            for table_name, columns in column_schemas.items():
+                for col_info in columns:
+                    col_name = col_info.get('name', '')
+                    key = f"{table_name}.{col_name}"
+                    databricks_columns[key] = {
+                        'table': table_name,
+                        'column': col_name,
+                        'type': col_info.get('type', ''),
+                        'transformation': col_info.get('transformation', ''),
+                        'activity': activity.get('name', '')
+                    }
+
+        # Match columns by name
+        all_keys = set(list(source_columns.keys()) + list(databricks_columns.keys()))
+
+        for key in sorted(all_keys):
+            src_col = source_columns.get(key)
+            db_col = databricks_columns.get(key)
+
+            if src_col and db_col:
+                # Both exist - compare
+                comparisons.append({
+                    'feature': f"{db_col['column']} ({db_col['table']})",
+                    'databricks_transformation': f"Source: {db_col['transformation']}. Type: {db_col['type']}. Activity: {db_col['activity']}",
+                    'source_transformation': f"Source: {src_col['transformation']}. Type: {src_col['type']}. Script: {src_col['script']}",
+                    'summary': 'Column exists in both systems' if src_col['type'] == db_col['type'] else f"Type change: {src_col['type']} → {db_col['type']}"
+                })
+            elif db_col:
+                # Only in Databricks
+                comparisons.append({
+                    'feature': f"{db_col['column']} ({db_col['table']})",
+                    'databricks_transformation': f"Source: {db_col['transformation']}. Type: {db_col['type']}. Activity: {db_col['activity']}",
+                    'source_transformation': 'NOT IN SOURCE',
+                    'summary': 'New column added in Databricks migration'
+                })
+            elif src_col:
+                # Only in source
+                comparisons.append({
+                    'feature': f"{src_col['column']} ({src_col['table']})",
+                    'databricks_transformation': 'NOT IN DATABRICKS',
+                    'source_transformation': f"Source: {src_col['transformation']}. Type: {src_col['type']}. Script: {src_col['script']}",
+                    'summary': 'Column removed in Databricks migration'
+                })
+
+        return comparisons
 
     def _set_sttm_column_widths(self, ws):
         """Set consistent column widths for all STTM sheets"""
