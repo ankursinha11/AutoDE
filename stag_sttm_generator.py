@@ -536,12 +536,11 @@ Return a JSON array of mappings:
 Generate mappings now (JSON only, no extra text):"""
 
         try:
-            # Call AI analyzer
-            response = self.ai_analyzer.analyze_with_llm(
-                prompt=prompt,
-                context="",
-                max_tokens=4000,
-                temperature=0.1  # Low temperature for factual matching
+            # Call AI analyzer using analyze_code method
+            response = self.ai_analyzer.analyze_code(
+                code=prompt,
+                context="Column mapping generation",
+                analysis_type="lineage_extraction"
             )
 
             # Parse JSON response
