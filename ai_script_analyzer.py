@@ -447,6 +447,27 @@ Return plain text - 2-3 sentences."""
 Describe transformation types and their business impact.
 Return plain text - 3-4 sentences."""
 
+            elif analysis_type == "deep_script_analysis":
+                # For STAG deep script analysis - needs extensive detail
+                system_prompt = """You are an expert code analyst for Hadoop/Pig/Shell scripts performing EXHAUSTIVE analysis.
+Extract COMPREHENSIVE details including:
+- 10-30 step-by-step logic items (detailed, numbered)
+- 5-15 code snippets (actual code with line numbers)
+- All inputs/outputs (file paths, table names)
+- All transformations (with specific column names, filters, joins)
+- Dependencies (JAR files, libraries, configs)
+Return ONLY valid JSON matching the specified structure - no markdown, no extra text."""
+
+            elif analysis_type == "deep_notebook_analysis":
+                # For STAG deep notebook analysis - needs extensive detail
+                system_prompt = """You are an expert Databricks/PySpark analyst performing EXHAUSTIVE analysis.
+Extract COMPREHENSIVE details including:
+- 10-30 step-by-step logic items (detailed Spark operations)
+- 5-15 code snippets (actual PySpark/SQL code)
+- All inputs/outputs (Delta tables, Parquet files, paths)
+- All transformations (with column operations, filters, joins, aggregations)
+Return ONLY valid JSON matching the specified structure - no markdown, no extra text."""
+
             else:
                 # General analysis
                 system_prompt = """You are an expert code analyst for data pipeline systems.
@@ -460,6 +481,15 @@ Analyze code and provide clear, accurate responses."""
             else:
                 user_prompt = code
 
+            # Determine max_tokens based on analysis type
+            if analysis_type in ["deep_script_analysis", "deep_notebook_analysis"]:
+                # Deep analysis needs much larger token limit for comprehensive output
+                max_tokens_limit = 8000  # Increased from 2000 to 8000 for EXHAUSTIVE detail
+            elif analysis_type in ["lineage_extraction", "column_lineage"]:
+                max_tokens_limit = 4000  # Increased for complex lineage
+            else:
+                max_tokens_limit = 2000  # Default
+
             # Call GPT-4
             response = self.client.chat.completions.create(
                 model=self.deployment_name,
@@ -467,14 +497,14 @@ Analyze code and provide clear, accurate responses."""
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                temperature=0.1 if analysis_type in ["lineage_extraction", "column_lineage", "workflow_extraction"] else 0.3,
-                max_tokens=2000,
+                temperature=0.1 if analysis_type in ["lineage_extraction", "column_lineage", "workflow_extraction", "deep_script_analysis", "deep_notebook_analysis"] else 0.3,
+                max_tokens=max_tokens_limit,
             )
 
             content = response.choices[0].message.content
 
             # Clean up response based on analysis type
-            if analysis_type in ["lineage_extraction", "column_lineage", "workflow_extraction"]:
+            if analysis_type in ["lineage_extraction", "column_lineage", "workflow_extraction", "deep_script_analysis", "deep_notebook_analysis"]:
                 # Extract JSON from markdown code blocks
                 if "```json" in content:
                     content = content.split("```json")[1].split("```")[0].strip()
@@ -486,7 +516,7 @@ Analyze code and provide clear, accurate responses."""
         except Exception as e:
             logger.error(f"Error in analyze_code ({analysis_type}): {e}")
             # Return appropriate fallback based on analysis type
-            if analysis_type in ["lineage_extraction", "workflow_extraction"]:
+            if analysis_type in ["lineage_extraction", "workflow_extraction", "deep_script_analysis", "deep_notebook_analysis"]:
                 return "{}"
             elif analysis_type == "column_lineage":
                 return "[]"

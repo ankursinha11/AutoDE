@@ -209,7 +209,7 @@ class HadoopLogicExtractor:
         search_results = self.indexer.search_multi_collection(
             query=f"{script_name} {workflow_name} script code content",
             collections=["hadoop_collection"],
-            top_k=15
+            top_k=25  # Increased from 15 to 25 to ensure we get all script chunks
         )
 
         hadoop_docs = search_results.get('hadoop_collection', [])
@@ -244,7 +244,7 @@ CONTEXT:
 - Purpose: Generate detailed analysis matching manual comparison format
 
 FULL SCRIPT CONTENT:
-{script_content[:50000]}
+{script_content[:100000]}
 
 TASK: Provide COMPREHENSIVE DEEP ANALYSIS with MAXIMUM DETAIL
 
@@ -340,9 +340,9 @@ CRITICAL REQUIREMENTS:
 """
 
         try:
-            # Get AI analysis
+            # Get AI analysis with larger content window
             ai_response = self.ai_analyzer.analyze_code(
-                code=script_content[:50000],
+                code=script_content[:100000],  # Increased from 50000 to 100000 for complete script analysis
                 context=prompt,
                 analysis_type="deep_script_analysis"
             )
@@ -363,32 +363,87 @@ CRITICAL REQUIREMENTS:
         return self._analyze_script_with_patterns(script_name, script_content)
 
     def _parse_ai_response_to_script(self, ai_response: str) -> Optional[Dict[str, Any]]:
-        """Parse AI response into script analysis structure"""
+        """Parse AI response into script analysis structure with robust error handling"""
+        import json
+
         try:
-            # Extract JSON from response (handle markdown code blocks)
+            # Strategy 1: Extract JSON from markdown code blocks
             json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', ai_response, re.DOTALL)
             if json_match:
                 json_str = json_match.group(1)
             else:
-                # Try to find JSON object directly
-                json_match = re.search(r'\{.*?"name".*?\}', ai_response, re.DOTALL)
+                # Strategy 2: Try to find JSON object directly (look for opening brace to closing brace)
+                json_match = re.search(r'\{[^{}]*"name"[^{}]*\{.*\}.*\}', ai_response, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(0)
                 else:
+                    # Strategy 3: Find any JSON-like structure
+                    start_idx = ai_response.find('{')
+                    if start_idx == -1:
+                        logger.warning("   No JSON object found in AI response")
+                        return None
+
+                    # Find matching closing brace
+                    brace_count = 0
+                    end_idx = start_idx
+                    for i in range(start_idx, len(ai_response)):
+                        if ai_response[i] == '{':
+                            brace_count += 1
+                        elif ai_response[i] == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_idx = i + 1
+                                break
+
+                    json_str = ai_response[start_idx:end_idx]
+
+            # Try to parse JSON
+            try:
+                script_analysis = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                logger.warning(f"   Failed to parse AI JSON: {e}")
+                logger.debug(f"   JSON string (first 500 chars): {json_str[:500]}")
+
+                # Try to fix common JSON issues
+                # Issue 1: Trailing commas
+                json_str_fixed = re.sub(r',(\s*[}\]])', r'\1', json_str)
+
+                # Issue 2: Unescaped quotes in strings
+                # (This is complex, skip for now)
+
+                try:
+                    script_analysis = json.loads(json_str_fixed)
+                    logger.info("   ✅ Fixed JSON parsing after removing trailing commas")
+                except:
+                    logger.error("   ❌ Could not fix JSON, giving up")
                     return None
 
-            script_analysis = json.loads(json_str)
+            # Validate and normalize required fields
+            if 'name' not in script_analysis:
+                script_analysis['name'] = 'Unknown Script'
 
-            # Validate required fields
-            if not all(key in script_analysis for key in ['name', 'purpose', 'step_by_step_logic']):
-                logger.warning("   AI response missing required fields")
-                return None
+            if 'purpose' not in script_analysis:
+                script_analysis['purpose'] = 'No purpose provided'
+
+            if 'step_by_step_logic' not in script_analysis:
+                # Try alternate field names
+                if 'steps' in script_analysis:
+                    script_analysis['step_by_step_logic'] = script_analysis['steps']
+                elif 'logic' in script_analysis:
+                    script_analysis['step_by_step_logic'] = script_analysis['logic']
+                else:
+                    script_analysis['step_by_step_logic'] = []
+
+            # Ensure step_by_step_logic is a list
+            if not isinstance(script_analysis['step_by_step_logic'], list):
+                script_analysis['step_by_step_logic'] = [str(script_analysis['step_by_step_logic'])]
+
+            # Ensure code_snippets exists
+            if 'code_snippets' not in script_analysis:
+                script_analysis['code_snippets'] = []
 
             return script_analysis
 
-        except json.JSONDecodeError as e:
-            logger.warning(f"   Failed to parse AI JSON: {e}")
-            return None
         except Exception as e:
             logger.error(f"   Error parsing AI response: {e}")
             return None
@@ -478,41 +533,153 @@ CRITICAL REQUIREMENTS:
         }
 
     def _extract_inputs_from_content(self, content: str) -> List[str]:
-        """Extract input file/table names from content"""
+        """
+        Extract input file/table names from content with enhanced Pig LOAD parsing
+
+        Handles patterns like:
+        - LOAD '$inputDir/data.dat' USING ...
+        - LOAD '/hdfs/path/to/table' USING ...
+        - df = spark.read.format("delta").load("/path/to/table")
+        """
         inputs = []
 
-        # Pattern: LOAD, FROM, INPUT, etc.
-        load_patterns = [
-            r'LOAD\s+[\'"]([^\'"]+)[\'"]',
-            r'FROM\s+(\w+)',
+        # Pattern 1: Pig LOAD statements
+        # Matches: LOAD 'path' or LOAD '$var/path'
+        pig_load_pattern = r'LOAD\s+[\'"]([^\'"]+)[\'"]'
+        pig_matches = re.findall(pig_load_pattern, content, re.IGNORECASE)
+
+        for match in pig_matches:
+            # Extract table name from path
+            # Example: '$inputPostBDFDir/*_cbeMatchAppend.dat' -> 'inputPostBDFDir' or extract from path
+            # Example: '/hdfs/user/cdd/input/bdf/data.dat' -> 'bdf' or 'data'
+
+            # Remove variables like $inputDir, $bcdate
+            cleaned = re.sub(r'\$\w+', '', match)
+
+            # Split by / and find meaningful table/file names
+            parts = [p.strip() for p in cleaned.split('/') if p.strip()]
+
+            # Look for table name (last meaningful part before file extension)
+            for part in reversed(parts):
+                # Remove file extension and wildcards
+                part_cleaned = re.sub(r'\*', '', part)
+                part_cleaned = re.sub(r'\.(dat|txt|csv|parquet|json)$', '', part_cleaned, flags=re.IGNORECASE)
+
+                # Skip if empty, too short, or looks like a date
+                if part_cleaned and len(part_cleaned) > 2 and not re.match(r'^\d{6,8}$', part_cleaned):
+                    inputs.append(part_cleaned)
+                    break
+
+        # Pattern 2: Databricks/Spark read statements
+        spark_read_patterns = [
+            r'\.load\([\'"]([^\'"]+)[\'"]\)',
+            r'\.table\([\'"]([^\'"]+)[\'"]\)',
+            r'spark\.read\.[^(]+\([\'"]([^\'"]+)[\'"]\)',
+        ]
+
+        for pattern in spark_read_patterns:
+            spark_matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in spark_matches:
+                cleaned = re.sub(r'\$\w+', '', match)
+                parts = [p.strip() for p in cleaned.split('/') if p.strip()]
+                for part in reversed(parts):
+                    part_cleaned = re.sub(r'\.(dat|txt|csv|parquet|json|delta)$', '', part, flags=re.IGNORECASE)
+                    if part_cleaned and len(part_cleaned) > 2 and not re.match(r'^\d{6,8}$', part_cleaned):
+                        inputs.append(part_cleaned)
+                        break
+
+        # Pattern 3: Generic INPUT parameters
+        generic_patterns = [
             r'INPUT\s*=\s*[\'"]([^\'"]+)[\'"]',
             r'--input[=\s]+([^\s]+)',
             r'scp\s+[^\s]+:([^\s]+)',  # SCP source
         ]
 
-        for pattern in load_patterns:
+        for pattern in generic_patterns:
             matches = re.findall(pattern, content, re.IGNORECASE)
-            inputs.extend(matches)
+            for match in matches:
+                cleaned = re.sub(r'\$\w+', '', match)
+                parts = [p.strip() for p in cleaned.split('/') if p.strip()]
+                for part in reversed(parts):
+                    if part and len(part) > 2:
+                        inputs.append(part)
+                        break
 
-        return list(set(inputs))[:15]  # Limit to 15 unique inputs
+        # Remove duplicates and return
+        unique_inputs = list(set(inputs))
+        return unique_inputs[:15]  # Limit to 15 unique inputs
 
     def _extract_outputs_from_content(self, content: str) -> List[str]:
-        """Extract output file/table names from content"""
+        """
+        Extract output file/table names from content with enhanced Pig STORE parsing
+
+        Handles patterns like:
+        - STORE data INTO '$outputBaseDir/permIdPatientAcctId/$bcdate'
+        - STORE data INTO '/hdfs/path/to/table'
+        - df.write.format("delta").save("/path/to/table")
+        """
         outputs = []
 
-        # Pattern: STORE, INTO, OUTPUT, etc.
-        store_patterns = [
-            r'STORE\s+\w+\s+INTO\s+[\'"]([^\'"]+)[\'"]',
-            r'INTO\s+(\w+)',
+        # Pattern 1: Pig STORE statements (most common in Hadoop)
+        # Matches: STORE alias INTO 'path' or '$var/path'
+        pig_store_pattern = r'STORE\s+\w+\s+INTO\s+[\'"]([^\'"]+)[\'"]'
+        pig_matches = re.findall(pig_store_pattern, content, re.IGNORECASE)
+
+        for match in pig_matches:
+            # Extract table name from path
+            # Example: '$outputBaseDir/permIdPatientAcctId/$bcdate' -> 'permIdPatientAcctId'
+            # Example: '/hdfs/user/cdd/publish/es/nopermid/20230101' -> 'nopermid'
+
+            # Remove variables like $outputBaseDir, $bcdate, $user
+            cleaned = re.sub(r'\$\w+', '', match)
+
+            # Split by / and find the meaningful table name (not empty, not just dates)
+            parts = [p.strip() for p in cleaned.split('/') if p.strip()]
+
+            # Look for table name (usually the last meaningful part before date variables)
+            for part in reversed(parts):
+                # Skip if it looks like a date or is very short
+                if part and len(part) > 2 and not re.match(r'^\d{6,8}$', part):
+                    outputs.append(part)
+                    break
+
+        # Pattern 2: Databricks/Spark write statements
+        # Matches: .save("/path/to/table") or .saveAsTable("table_name")
+        spark_save_patterns = [
+            r'\.save\([\'"]([^\'"]+)[\'"]\)',
+            r'\.saveAsTable\([\'"]([^\'"]+)[\'"]\)',
+        ]
+
+        for pattern in spark_save_patterns:
+            spark_matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in spark_matches:
+                # Extract table name from path
+                cleaned = re.sub(r'\$\w+', '', match)
+                parts = [p.strip() for p in cleaned.split('/') if p.strip()]
+                for part in reversed(parts):
+                    if part and len(part) > 2 and not re.match(r'^\d{6,8}$', part):
+                        outputs.append(part)
+                        break
+
+        # Pattern 3: Generic OUTPUT parameters
+        generic_patterns = [
             r'OUTPUT\s*=\s*[\'"]([^\'"]+)[\'"]',
             r'--output[=\s]+([^\s]+)',
         ]
 
-        for pattern in store_patterns:
+        for pattern in generic_patterns:
             matches = re.findall(pattern, content, re.IGNORECASE)
-            outputs.extend(matches)
+            for match in matches:
+                cleaned = re.sub(r'\$\w+', '', match)
+                parts = [p.strip() for p in cleaned.split('/') if p.strip()]
+                for part in reversed(parts):
+                    if part and len(part) > 2:
+                        outputs.append(part)
+                        break
 
-        return list(set(outputs))[:15]  # Limit to 15 unique outputs
+        # Remove duplicates and return
+        unique_outputs = list(set(outputs))
+        return unique_outputs[:15]  # Limit to 15 unique outputs
 
     def _extract_logic_fallback(self, workflow_name: str) -> Dict[str, Any]:
         """Fallback extraction when scripts cannot be found"""
