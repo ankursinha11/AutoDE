@@ -118,8 +118,12 @@ class STAGSTTMGenerator:
             source_schema = self._extract_schema_from_code(source_logic, source_system)
             target_schema = self._extract_schema_from_code(databricks_logic, 'databricks')
 
+            # Handle None schemas before trying to access them
             if not source_schema or not target_schema:
-                logger.warning(f"   ⚠ Code-extracted schemas incomplete: source={len(source_schema.get('columns', []))} cols, target={len(target_schema.get('columns', []))} cols")
+                source_col_count = len(source_schema.get('columns', [])) if source_schema else 0
+                target_col_count = len(target_schema.get('columns', [])) if target_schema else 0
+                logger.warning(f"   ⚠ Code-extracted schemas incomplete: source={source_col_count} cols, target={target_col_count} cols")
+
                 # Still try to generate mappings with whatever we have
                 if not source_schema:
                     source_schema = {'columns': [], 'table_name': 'Unknown', 'schema': source_system}
