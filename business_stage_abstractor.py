@@ -272,19 +272,27 @@ Now analyze the actual workflows above and return the JSON array:
             if steps:
                 summary_parts.append("Transformation Steps:")
                 for i, step in enumerate(steps, 1):
-                    step_desc = f"\n  {i}. {step.get('dataset', 'Unknown')}"
+                    # Handle both dict and string formats
+                    if isinstance(step, dict):
+                        step_desc = f"\n  {i}. {step.get('dataset', step.get('description', 'Unknown'))}"
+                    elif isinstance(step, str):
+                        step_desc = f"\n  {i}. {step}"
+                    else:
+                        step_desc = f"\n  {i}. Unknown step"
 
-                    if step.get('component_type'):
-                        step_desc += f"\n     Type: {step.get('component_type')}"
+                    # Only access dict methods if step is a dict
+                    if isinstance(step, dict):
+                        if step.get('component_type'):
+                            step_desc += f"\n     Type: {step.get('component_type')}"
 
-                    if step.get('transformation_rules'):
-                        step_desc += f"\n     Transformation: {step.get('transformation_rules')}"
+                        if step.get('transformation_rules'):
+                            step_desc += f"\n     Transformation: {step.get('transformation_rules')}"
 
-                    if step.get('inputs'):
-                        step_desc += f"\n     Inputs: {', '.join(step.get('inputs', [])[:3])}"
+                        if step.get('inputs'):
+                            step_desc += f"\n     Inputs: {', '.join(step.get('inputs', [])[:3])}"
 
-                    if step.get('outputs'):
-                        step_desc += f"\n     Outputs: {', '.join(step.get('outputs', [])[:3])}"
+                        if step.get('outputs'):
+                            step_desc += f"\n     Outputs: {', '.join(step.get('outputs', [])[:3])}"
 
                     summary_parts.append(step_desc)
 
@@ -490,7 +498,15 @@ Now analyze the actual workflows above and return the JSON array:
             items = [job.get('name', '') for job in jobs]
         elif system == 'abinitio':
             steps = logic.get('steps', [])
-            items = [step.get('dataset', '') for step in steps]
+            # Handle both dict and string formats
+            items = []
+            for step in steps:
+                if isinstance(step, dict):
+                    items.append(step.get('dataset', step.get('description', '')))
+                elif isinstance(step, str):
+                    items.append(step)
+                else:
+                    items.append('')
         elif system == 'databricks':
             activities = logic.get('activities', [])
             items = [activity.get('name', '') for activity in activities]
