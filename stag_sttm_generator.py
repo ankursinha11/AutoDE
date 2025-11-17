@@ -36,6 +36,51 @@ class STAGSTTMGenerator:
         self.ai_analyzer = ai_analyzer
         self.indexer = indexer
 
+    def _search_schema_files(self, workflow_name: str, system: str) -> List[Dict]:
+        """
+        Search for schema definition files in vector DB
+
+        For Ab Initio: Use FAWN/VM outputs instead of raw .mp files
+        For Hadoop: Search for CREATE TABLE, DDL
+        For Databricks: Search for DataFrame schemas
+        """
+        if not self.indexer:
+            logger.warning("   No indexer for schema search")
+            return []
+
+        try:
+            # Build search query based on system
+            if system == 'abinitio':
+                # Search FAWN outputs and STTM collections
+                query = f"{workflow_name} DML XFR record_format schema column"
+                collections = ["abinitio_collection", "abinitio_sttm_collection"]
+            elif system == 'hadoop':
+                query = f"{workflow_name} CREATE TABLE schema DDL Hive columns"
+                collections = ["hadoop_collection"]
+            elif system == 'databricks':
+                query = f"{workflow_name} StructType schema createDataFrame columns"
+                collections = ["databricks_collection"]
+            else:
+                return []
+
+            search_results = self.indexer.search_multi_collection(
+                query=query,
+                collections=collections,
+                top_k=30  # Get comprehensive schema docs
+            )
+
+            schema_docs = []
+            for collection in collections:
+                docs = search_results.get(collection, [])
+                schema_docs.extend(docs)
+
+            logger.info(f"   📋 Found {len(schema_docs)} schema documents for {system}")
+            return schema_docs
+
+        except Exception as e:
+            logger.error(f"   Schema file search failed: {e}")
+            return []
+
     def generate_sttm(
         self,
         source_logic: Dict[str, Any],
@@ -43,11 +88,15 @@ class STAGSTTMGenerator:
         source_system: str
     ) -> List[Dict[str, Any]]:
         """
-        Generate Source-to-Target Mappings
+        Generate Source-to-Target Mappings using CODE-EXTRACTED schemas as grounding truth
+
+        NEW APPROACH:
+        - Extract schemas directly from pre-parsed column_schemas (NO hallucinations!)
+        - Use AI ONLY for semantic matching, transformation descriptions, and comparison notes
 
         Args:
-            source_logic: Logic from Hadoop or Ab Initio
-            databricks_logic: Logic from Databricks
+            source_logic: Logic from Hadoop or Ab Initio (with column_schemas from code extraction)
+            databricks_logic: Logic from Databricks (with column_schemas from code extraction)
             source_system: "hadoop" or "abinitio"
 
         Returns:
@@ -62,36 +111,142 @@ class STAGSTTMGenerator:
                 }
             ]
         """
-        logger.info(f"🔗 Generating STTM from {source_system} to Databricks")
-
-        if not self.ai_analyzer:
-            logger.warning("No AI analyzer provided - using fallback STTM")
-            return self._fallback_sttm_generation(source_logic, databricks_logic)
+        logger.info(f"🔗 Generating STTM from {source_system} to Databricks (using code-extracted schemas)")
 
         try:
-            # Step 1: Extract schemas using advanced RAG
-            source_schema = self._extract_schema_with_rag(source_logic, source_system)
-            target_schema = self._extract_schema_with_rag(databricks_logic, 'databricks')
+            # Step 1: Extract schemas from CODE (NOT RAG!) - NO HALLUCINATIONS
+            source_schema = self._extract_schema_from_code(source_logic, source_system)
+            target_schema = self._extract_schema_from_code(databricks_logic, 'databricks')
 
             if not source_schema or not target_schema:
-                logger.warning("Failed to extract schemas - using fallback")
-                return self._fallback_sttm_generation(source_logic, databricks_logic)
+                logger.warning(f"   ⚠ Code-extracted schemas incomplete: source={len(source_schema.get('columns', []))} cols, target={len(target_schema.get('columns', []))} cols")
+                # Still try to generate mappings with whatever we have
+                if not source_schema:
+                    source_schema = {'columns': [], 'table_name': 'Unknown', 'schema': source_system}
+                if not target_schema:
+                    target_schema = {'columns': [], 'table_name': 'Unknown', 'schema': 'databricks'}
 
-            # Step 2: Generate column mappings using AI
-            mappings = self._generate_column_mappings_with_rag(
-                source_schema,
-                target_schema,
-                source_logic,
-                databricks_logic,
-                source_system
-            )
+            logger.info(f"   📋 Source schema: {len(source_schema.get('columns', []))} columns")
+            logger.info(f"   📋 Target schema: {len(target_schema.get('columns', []))} columns")
+
+            # Step 2: Generate column mappings using AI (grounded in extracted schemas)
+            if self.ai_analyzer:
+                mappings = self._generate_column_mappings_with_ai(
+                    source_schema,
+                    target_schema,
+                    source_logic,
+                    databricks_logic,
+                    source_system
+                )
+            else:
+                # Fallback: simple name-based matching
+                mappings = self._generate_simple_mappings(source_schema, target_schema)
 
             logger.info(f"✅ Generated {len(mappings)} column mappings")
             return mappings
 
         except Exception as e:
             logger.error(f"STTM generation failed: {e}")
-            return self._fallback_sttm_generation(source_logic, databricks_logic)
+            import traceback
+            traceback.print_exc()
+            return []
+
+    def _extract_schema_from_code(
+        self,
+        logic: Dict[str, Any],
+        system: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Extract schema directly from CODE-EXTRACTED column_schemas (NO AI, NO RAG, NO HALLUCINATIONS!)
+
+        This is the NEW grounding truth approach that uses the already-parsed column_schemas
+        from databricks_logic_extractor.py and hadoop_logic_extractor.py
+
+        Args:
+            logic: Logic dict containing 'activities' (Databricks) or 'jobs' (Hadoop) with column_schemas
+            system: "databricks", "hadoop", or "abinitio"
+
+        Returns:
+            {
+                'table_name': str,
+                'schema': str,
+                'columns': [
+                    {
+                        'name': str,
+                        'type': str,
+                        'order': int,
+                        'transformation': str,
+                        'source_line': int
+                    }
+                ],
+                'source_files': List[str]
+            }
+        """
+        logger.info(f"   📋 Extracting schema from CODE for {system}")
+
+        all_columns = []
+        source_files = []
+        consolidated_table_name = "consolidated_output"
+
+        if system == 'databricks':
+            # Extract from activities
+            activities = logic.get('activities', [])
+            for activity in activities:
+                activity_name = activity.get('name', 'Unknown')
+                notebook_path = activity.get('notebook', '')
+                column_schemas = activity.get('column_schemas', {})
+
+                if notebook_path:
+                    source_files.append(notebook_path)
+
+                # Consolidate all columns from all tables in this activity
+                for table_name, columns in column_schemas.items():
+                    for col in columns:
+                        # Add table context to avoid duplicates from different tables
+                        col_copy = col.copy()
+                        col_copy['source_table'] = table_name
+                        col_copy['source_activity'] = activity_name
+                        all_columns.append(col_copy)
+
+        elif system in ['hadoop', 'abinitio']:
+            # Extract from jobs
+            jobs = logic.get('jobs', [])
+            for job in jobs:
+                script_name = job.get('script_file', job.get('name', 'Unknown'))
+                column_schemas = job.get('column_schemas', {})
+
+                if script_name:
+                    source_files.append(script_name)
+
+                # Consolidate all columns from all tables in this job
+                for table_name, columns in column_schemas.items():
+                    for col in columns:
+                        col_copy = col.copy()
+                        col_copy['source_table'] = table_name
+                        col_copy['source_script'] = script_name
+                        all_columns.append(col_copy)
+
+        # Deduplicate columns by name (keep first occurrence)
+        seen_names = set()
+        unique_columns = []
+        for col in all_columns:
+            col_name = col.get('name', '')
+            if col_name and col_name not in seen_names:
+                seen_names.add(col_name)
+                unique_columns.append(col)
+
+        logger.info(f"      ✅ Extracted {len(unique_columns)} unique columns from {len(source_files)} source files")
+
+        if not unique_columns:
+            logger.warning(f"      ⚠ No columns extracted from {system} - column_schemas may be empty!")
+            return None
+
+        return {
+            'table_name': consolidated_table_name,
+            'schema': system.upper(),
+            'columns': unique_columns,
+            'source_files': source_files
+        }
 
     def _extract_schema_with_rag(
         self,
@@ -99,89 +254,120 @@ class STAGSTTMGenerator:
         system: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Extract schema using RAG with schema-specific prompting
+        Extract schema using RAG with ENHANCED schema-specific prompting
 
         Returns:
             {
                 'table_name': str,
+                'schema': str,
                 'columns': [
-                    {'name': str, 'type': str, 'description': str}
+                    {
+                        'name': str,
+                        'type': str,
+                        'description': str,
+                        'field_type': str,  # NEW: Identifier, Demographic, etc.
+                        'contains_pii': bool,  # NEW
+                        'is_primary_key': bool,  # NEW
+                        'depends_on': List[str],  # NEW
+                        'transformation_rule': str  # NEW
+                    }
                 ],
                 'source_files': List[str]
             }
         """
-        logger.info(f"   📋 Extracting schema for {system} using RAG")
+        logger.info(f"   📋 Extracting ENHANCED schema for {system} using RAG")
 
-        # Create context for schema extraction
-        context = self._create_schema_context(logic, system)
-
-        # Get workflow name and escape any curly braces
+        # Get workflow name
         workflow_name = str(logic.get('workflow_name') or logic.get('graph_name') or logic.get('pipeline_name', 'Unknown'))
+
+        # CRITICAL: Search for schema files FIRST
+        schema_docs = self._search_schema_files(workflow_name, system)
+
+        if schema_docs:
+            # Build rich context from schema files
+            schema_context = "\n\n".join([
+                f"=== FILE: {doc.get('metadata', {}).get('file_name', 'Unknown')} ===\n{doc.get('content', '')[:5000]}"
+                for doc in schema_docs[:10]  # First 10 docs
+            ])
+            logger.info(f"   Using {len(schema_docs)} schema files for context")
+        else:
+            # Fallback to logic context
+            schema_context = self._create_schema_context(logic, system)
+            logger.warning(f"   No schema files found - using logic context")
+
+        # Escape curly braces
         workflow_name = workflow_name.replace('{', '{{').replace('}', '}}')
+        schema_context = schema_context.replace('{', '{{').replace('}', '}}')
 
-        # Escape any curly braces in context to avoid f-string interpolation issues
-        context = context.replace('{', '{{').replace('}', '}}')
-
-        # Advanced RAG prompt for schema extraction
-        prompt = f"""You are a data schema expert analyzing {system} workflows to extract table schemas.
+        # ENHANCED RAG prompt for schema extraction with 13-column metadata
+        prompt = f"""You are a data schema expert extracting COMPLETE table schemas with ALL column metadata.
 
 # WORKFLOW INFORMATION
 System: {system}
 Workflow: {workflow_name}
 
-{context}
+# SCHEMA FILES AND CONTEXT
+{schema_context}
 
-# TASK: Extract Output Schema
+# TASK: Extract COMPLETE Output Schema with ENHANCED Metadata
 
-Analyze this workflow and extract the OUTPUT schema (the final data structure produced).
+Extract ALL columns from the output schema with comprehensive metadata for each column.
 
-Look for:
-1. **Column definitions** in DML files, CREATE TABLE statements, DataFrame schemas
-2. **Data types** (STRING, INTEGER, DECIMAL, DATE, etc.)
-3. **Transformation logic** that creates new columns
-4. **Source file references** (DML files, schema definitions)
+For EACH column, provide:
+1. **name**: Column name
+2. **type**: Data type (STRING, INTEGER, DECIMAL, DATE, TIMESTAMP, BOOLEAN, etc.)
+3. **description**: Business meaning (what this column represents)
+4. **field_type**: Classification - choose from:
+   - "Identifier" (IDs, keys, unique identifiers)
+   - "Demographic" (Name, DOB, Gender, Address, ethnicity)
+   - "Financial" (Amount, Balance, Price, revenue)
+   - "Calculated" (Derived from other columns)
+   - "Reference" (Foreign keys, lookup values)
+   - "Status" (Flags, statuses, indicators)
+   - "Metadata" (Created date, updated date, version)
+5. **contains_pii**: true/false - PII includes: SSN, Name (first/last/full), DOB, Address, Phone, Email, Account numbers
+6. **is_primary_key**: true/false
+7. **depends_on**: List of source columns this depends on (for calculated fields) - empty array if direct mapping
+8. **transformation_rule**: How derived (e.g., "CONCAT(first_name, ' ', last_name)" or "DIRECT" for direct copy)
 
-# OUTPUT FORMAT
+# OUTPUT FORMAT (JSON):
 
-Return a JSON object with this structure:
-
-```json
 {{
   "table_name": "output_table_name",
+  "schema": "SCHEMA_NAME",
   "columns": [
     {{
-      "name": "column_name",
-      "type": "data_type",
-      "description": "Brief description of what this column contains"
+      "name": "patient_id",
+      "type": "STRING",
+      "description": "Unique patient identifier",
+      "field_type": "Identifier",
+      "contains_pii": false,
+      "is_primary_key": true,
+      "depends_on": [],
+      "transformation_rule": "DIRECT"
+    }},
+    {{
+      "name": "full_name",
+      "type": "STRING",
+      "description": "Patient full name (first + last)",
+      "field_type": "Demographic",
+      "contains_pii": true,
+      "is_primary_key": false,
+      "depends_on": ["first_name", "last_name"],
+      "transformation_rule": "CONCAT(first_name, ' ', last_name)"
     }}
   ],
-  "source_files": ["file1.dml", "schema.py"]
+  "source_files": ["schema.dml", "transform.xfr"]
 }}
-```
 
-# GUIDELINES
+# CRITICAL REQUIREMENTS:
+- Extract ALL columns (aim for 50-100+ columns for typical data tables)
+- Be EXHAUSTIVE - don't skip columns
+- Classify field_type accurately
+- Detect PII carefully (SSN, names, DOB, addresses, phone, email)
+- Provide actual transformation formulas (not just "transformation")
 
-- **Infer from context**: If explicit schema not found, infer from transformation logic
-- **Data types**: Use standard types (STRING, INTEGER, DECIMAL, DATE, TIMESTAMP, BOOLEAN)
-- **Descriptions**: Explain business meaning, not just technical details
-- **Source files**: List DML, XFR, Python, or SQL files that define schema
-
-# EXAMPLE (for reference only):
-
-```json
-{{
-  "table_name": "customer_output",
-  "columns": [
-    {{"name": "customer_id", "type": "STRING", "description": "Unique customer identifier"}},
-    {{"name": "full_name", "type": "STRING", "description": "Customer full name (first + last)"}},
-    {{"name": "account_balance", "type": "DECIMAL", "description": "Current account balance"}},
-    {{"name": "last_updated", "type": "TIMESTAMP", "description": "Last record update timestamp"}}
-  ],
-  "source_files": ["customer.dml", "transform_customer.xfr"]
-}}
-```
-
-Now extract the schema from the workflow above:
+Now extract the COMPLETE schema:
 """
 
         try:
@@ -266,6 +452,160 @@ Now extract the schema from the workflow above:
             logger.warning(f"Failed to parse schema response: {e}")
             return None
 
+    def _generate_column_mappings_with_ai(
+        self,
+        source_schema: Dict[str, Any],
+        target_schema: Dict[str, Any],
+        source_logic: Dict[str, Any],
+        databricks_logic: Dict[str, Any],
+        source_system: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate column mappings using AI - GROUNDED in code-extracted schemas
+
+        CRITICAL RULES:
+        - AI can ONLY match columns from the provided schemas
+        - AI CANNOT invent or hallucinate column names
+        - AI is used for: semantic matching, transformation description, comparison notes
+
+        Returns:
+            List of column mappings for comparison section
+        """
+        logger.info(f"   🤖 Generating AI-based column mappings (grounded in extracted schemas)")
+
+        source_columns = source_schema.get('columns', [])
+        target_columns = target_schema.get('columns', [])
+
+        if not source_columns and not target_columns:
+            logger.warning("      ⚠ No columns in either source or target schema!")
+            return []
+
+        # Build explicit column lists for AI prompt
+        source_col_list = "\n".join([
+            f"  - {col.get('name')}: {col.get('type')} (from {col.get('source_table', 'unknown')})"
+            for col in source_columns
+        ])
+
+        target_col_list = "\n".join([
+            f"  - {col.get('name')}: {col.get('type')} (from {col.get('source_table', 'unknown')})"
+            for col in target_columns
+        ])
+
+        # Create AI prompt with STRICT anti-hallucination instructions
+        prompt = f"""You are a data migration expert analyzing column mappings between {source_system.upper()} (source) and DATABRICKS (target).
+
+**CRITICAL RULES - NO EXCEPTIONS:**
+1. You can ONLY use columns from the lists below - these are extracted from actual code
+2. You are FORBIDDEN from inventing, guessing, or hallucinating any column names
+3. If a column doesn't exist in the provided lists, mark it as "NOT FOUND IN CODE" - never guess
+4. Your job is to MATCH existing columns and describe their transformations - NOT to create new ones
+
+**SOURCE ({source_system.upper()}) COLUMNS (extracted from code):**
+{source_col_list if source_col_list else "  (No columns extracted)"}
+
+**TARGET (DATABRICKS) COLUMNS (extracted from code):**
+{target_col_list if target_col_list else "  (No columns extracted)"}
+
+**TASK:**
+For each TARGET column, identify:
+1. Which SOURCE column(s) it maps to (by semantic meaning, not just name)
+2. Whether it's a direct copy, transformation, or new column
+3. A brief transformation note (e.g., "Direct copy", "Split from composite_id", "Trimmed and cast")
+
+Return a JSON array of mappings:
+[
+  {{
+    "target_column": "column_name_from_target_list",
+    "source_columns": ["column_name_from_source_list"],
+    "mapping_type": "direct|transformation|new|removed",
+    "transformation_note": "brief description",
+    "confidence": 0.0-1.0
+  }}
+]
+
+**EXAMPLE (if source had FN, LN and target had FirstName, LastName):**
+[
+  {{"target_column": "FirstName", "source_columns": ["FN"], "mapping_type": "direct", "transformation_note": "Column renamed from FN", "confidence": 0.95}},
+  {{"target_column": "LastName", "source_columns": ["LN"], "mapping_type": "direct", "transformation_note": "Column renamed from LN", "confidence": 0.95}}
+]
+
+Generate mappings now (JSON only, no extra text):"""
+
+        try:
+            # Call AI analyzer
+            response = self.ai_analyzer.analyze_with_llm(
+                prompt=prompt,
+                context="",
+                max_tokens=4000,
+                temperature=0.1  # Low temperature for factual matching
+            )
+
+            # Parse JSON response
+            import json
+            import re
+
+            # Extract JSON from response (handle markdown code blocks)
+            json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                # Try to find raw JSON array
+                json_match = re.search(r'(\[.*\])', response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(1)
+                else:
+                    logger.warning("      ⚠ Could not extract JSON from AI response")
+                    return self._generate_simple_mappings(source_schema, target_schema)
+
+            mappings = json.loads(json_str)
+
+            logger.info(f"      ✅ AI generated {len(mappings)} column mappings")
+            return mappings
+
+        except Exception as e:
+            logger.error(f"      ❌ AI mapping failed: {e}")
+            # Fallback to simple name-based matching
+            return self._generate_simple_mappings(source_schema, target_schema)
+
+    def _generate_simple_mappings(
+        self,
+        source_schema: Dict[str, Any],
+        target_schema: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Fallback: Generate simple name-based column mappings (no AI)
+        """
+        logger.info("      Using simple name-based matching (no AI)")
+
+        source_columns = {col.get('name').lower(): col for col in source_schema.get('columns', [])}
+        target_columns = source_schema.get('columns', [])
+
+        mappings = []
+        for target_col in target_columns:
+            target_name = target_col.get('name', '')
+            target_name_lower = target_name.lower()
+
+            # Try exact match
+            if target_name_lower in source_columns:
+                mappings.append({
+                    'target_column': target_name,
+                    'source_columns': [source_columns[target_name_lower].get('name')],
+                    'mapping_type': 'direct',
+                    'transformation_note': 'Direct copy (exact name match)',
+                    'confidence': 1.0
+                })
+            else:
+                # Mark as new column
+                mappings.append({
+                    'target_column': target_name,
+                    'source_columns': [],
+                    'mapping_type': 'new',
+                    'transformation_note': 'New column in target (no source match)',
+                    'confidence': 0.5
+                })
+
+        return mappings
+
     def _generate_column_mappings_with_rag(
         self,
         source_schema: Dict[str, Any],
@@ -297,11 +637,16 @@ Now extract the schema from the workflow above:
         source_columns_str = source_columns_str.replace('{', '{{').replace('}', '}}')
         target_columns_str = target_columns_str.replace('{', '{{').replace('}', '}}')
 
-        # Advanced RAG prompt for column mapping
-        prompt = f"""You are a data mapping expert creating Source-to-Target Mappings (STTM) for a {source_system} to Databricks migration.
+        # Get schema names
+        source_schema_name = source_schema.get('schema', f"{source_system.upper()}_SCHEMA")
+        target_schema_name = target_schema.get('schema', "DATABRICKS_SCHEMA")
+
+        # ENHANCED RAG prompt for 13-column STTM mapping
+        prompt = f"""You are a data mapping expert creating COMPLETE Source-to-Target Mappings (STTM) in 13-column Excel format for {source_system} to Databricks migration.
 
 # SOURCE SCHEMA
 System: {source_system}
+Schema: {source_schema_name}
 Table: {source_table}
 
 Columns:
@@ -309,71 +654,91 @@ Columns:
 
 # TARGET SCHEMA
 System: Databricks
+Schema: {target_schema_name}
 Table: {target_table}
 
 Columns:
 {target_columns_str}
 
-# TASK: Generate Column Mappings
+# TASK: Generate COMPLETE 13-Column STTM for EVERY Target Column
 
-For EACH target column, identify:
-1. **Source columns** that map to it (can be multiple for derived columns)
-2. **Transformation logic** (if any)
-3. **Dependencies** (lookup tables, reference files)
-4. **Confidence** (how certain you are about the mapping)
+For EACH target column, create a mapping with 13 columns:
 
-# MAPPING RULES
+1. **processing_order**: Sequential number (1, 2, 3...)
+2. **schema**: Schema name (e.g., "DATABRICKS_BDF")
+3. **target_table**: Target table name
+4. **target_field**: Target column name
+5. **data_type**: Data type (STRING, INTEGER, DECIMAL, DATE, etc.)
+6. **is_pk**: Is primary key? (true/false)
+7. **contains_pii**: Contains PII? (true/false)
+8. **field_type**: Classification (Identifier, Demographic, Financial, Calculated, Reference, Status, Metadata)
+9. **field_depends_on**: Source columns this depends on (comma-separated string, or empty if direct)
+10. **pre_processing_rules**: DETAILED transformation logic with:
+    - Activity/Component reference (e.g., "ACTIVITY: Parse & Split.")
+    - Exact transformation formula (e.g., "Extracts first part of composite ID by splitting on '_'. Formula: SPLIT(composite_id, '_')[0]")
+11. **source_field_names**: Source field expression (e.g., "value.substr(1,64)" or column name)
+12. **source_dataset**: Source file/table name
+13. **field_definition**: Business definition (what this field represents)
 
-- **Direct Mapping**: Same column exists in source → DIRECT COPY
-- **Derived Mapping**: Target column computed from multiple source columns → Show formula
-- **Renamed Mapping**: Same data, different name → RENAME
-- **New Column**: Target column doesn't exist in source → NEW (explain default value)
-- **Type Conversion**: Source and target have different types → CAST
+# OUTPUT FORMAT (JSON Array):
 
-# OUTPUT FORMAT
-
-Return a JSON array with this structure:
-
-```json
 [
   {{
-    "target_column": "column_name",
+    "processing_order": 1,
+    "schema": "{target_schema_name}",
+    "target_table": "{target_table}",
+    "target_field": "hospitalfk",
+    "data_type": "SHORT",
+    "is_pk": false,
+    "contains_pii": false,
+    "field_type": "Identifier",
+    "field_depends_on": "ID",
+    "pre_processing_rules": "ACTIVITY: Parse & Split. Extracts first part of composite ID by splitting on '_'. Formula: SPLIT(composite_id, '_')[0]",
+    "source_field_names": "value.substr(1,64)",
+    "source_dataset": "*_cbeMatchAppend.dat",
+    "field_definition": "A new foreign key for the hospital, derived from the original composite ID."
+  }},
+  {{
+    "processing_order": 2,
+    "schema": "{target_schema_name}",
+    "target_table": "{target_table}",
+    "target_field": "patient_acct_id",
     "data_type": "STRING",
-    "source_columns": ["source_col1", "source_col2"],
-    "transformation_logic": "CONCAT(source_col1, ' ', source_col2)",
-    "dependencies": ["reference_table.dml"],
-    "confidence": 0.95
+    "is_pk": false,
+    "contains_pii": true,
+    "field_type": "Identifier",
+    "field_depends_on": "ID",
+    "pre_processing_rules": "ACTIVITY: Parse & Split. Extracts second part of composite ID. Formula: SPLIT(composite_id, '_')[1]",
+    "source_field_names": "value.substr(1,64)",
+    "source_dataset": "*_cbeMatchAppend.dat",
+    "field_definition": "Patient account identifier from BDF result file."
   }}
 ]
 ```
 
-# TRANSFORMATION LOGIC EXAMPLES
+# CRITICAL REQUIREMENTS:
 
-- **CONCAT**: `CONCAT(first_name, ' ', last_name)` → full_name
-- **SPLIT**: `SPLIT(full_name, ' ')[0]` → first_name
-- **CAST**: `CAST(amount AS DECIMAL)` → Converts type
-- **LOOKUP**: `LOOKUP(customer_id, customer_ref_table)` → Gets value from reference
-- **COALESCE**: `COALESCE(phone_mobile, phone_home, 'N/A')` → First non-null value
-- **CASE**: `CASE WHEN age >= 18 THEN 'Adult' ELSE 'Minor' END` → Conditional logic
-- **DATE_FORMAT**: `DATE_FORMAT(created_date, 'yyyy-MM-dd')` → Format conversion
-- **DIRECT**: `customer_id` → No transformation (direct copy)
+- **Generate mapping for EVERY target column** (aim for 50-100+ rows)
+- **pre_processing_rules MUST be DETAILED**:
+  - Include activity/component name
+  - Include exact transformation formula/expression
+  - Example: "ACTIVITY: Reformat_Component. Concatenates first and last name with space. Formula: CONCAT(first_name, ' ', last_name)"
+- **field_depends_on**: List all source columns (comma-separated string)
+- **source_field_names**: Can be expression or column name
+- **source_dataset**: Actual source file/table name
+- **field_definition**: Clear business explanation
 
-# CONFIDENCE SCORING
+# TRANSFORMATION FORMULA EXAMPLES:
 
-- **0.95-1.0**: Exact match (same name and type)
-- **0.80-0.94**: High confidence (same data, minor differences)
-- **0.60-0.79**: Medium confidence (inferred from context)
-- **0.40-0.59**: Low confidence (educated guess)
-- **0.20-0.39**: Very uncertain (needs validation)
+- CONCAT: `CONCAT(first_name, ' ', last_name)`
+- SPLIT: `SPLIT(full_name, '_')[0]`
+- CAST: `CAST(amount AS DECIMAL(10,2))`
+- SUBSTR: `SUBSTR(value, 1, 64)` or `value.substr(1,64)`
+- CASE: `CASE WHEN age >= 18 THEN 'Adult' ELSE 'Minor' END`
+- COALESCE: `COALESCE(phone_mobile, phone_home, 'N/A')`
+- DIRECT: Column name (no transformation)
 
-# IMPORTANT
-
-- **Be specific**: Use actual column names from schemas above
-- **Explain transformations**: Don't just say "transformation" - show the formula
-- **List all sources**: If multiple columns contribute, list them all
-- **Include dependencies**: Reference lookup files, DML files, etc.
-
-Now generate the STTM mappings:
+Now generate the COMPLETE 13-column STTM for ALL target columns:
 """
 
         try:
@@ -428,35 +793,36 @@ Now generate the STTM mappings:
         mappings: List[Dict[str, Any]],
         target_schema: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Validate and enrich mappings"""
+        """Validate and enrich 13-column STTM mappings"""
         validated = []
 
         target_columns = {col['name'] for col in target_schema.get('columns', [])}
 
-        for mapping in mappings:
-            # Validate required fields
-            if not all(key in mapping for key in ['target_column', 'source_columns', 'transformation_logic']):
-                logger.warning(f"   ⚠ Mapping missing required fields: {mapping.get('target_column', 'Unknown')}")
+        for i, mapping in enumerate(mappings, 1):
+            # Ensure processing_order is sequential
+            if 'processing_order' not in mapping or not mapping['processing_order']:
+                mapping['processing_order'] = i
+
+            # Validate required 13-column fields
+            required_fields = ['target_field', 'data_type', 'pre_processing_rules']
+            if not all(key in mapping for key in required_fields):
+                logger.warning(f"   ⚠ Mapping missing required fields: {mapping.get('target_field', 'Unknown')}")
                 continue
 
-            # Ensure source_columns is a list
-            if not isinstance(mapping.get('source_columns'), list):
-                mapping['source_columns'] = [mapping['source_columns']]
+            # Ensure all 13 columns exist with defaults
+            mapping.setdefault('schema', target_schema.get('schema', 'DATABRICKS_SCHEMA'))
+            mapping.setdefault('target_table', target_schema.get('table_name', 'Unknown'))
+            mapping.setdefault('is_pk', False)
+            mapping.setdefault('contains_pii', False)
+            mapping.setdefault('field_type', 'Unknown')
+            mapping.setdefault('field_depends_on', '')
+            mapping.setdefault('source_field_names', '')
+            mapping.setdefault('source_dataset', 'Unknown')
+            mapping.setdefault('field_definition', '')
 
-            # Ensure dependencies is a list
-            if 'dependencies' not in mapping:
-                mapping['dependencies'] = []
-            elif not isinstance(mapping['dependencies'], list):
-                mapping['dependencies'] = [mapping['dependencies']]
-
-            # Validate confidence
-            confidence = mapping.get('confidence', 0.7)
-            if not isinstance(confidence, (int, float)) or not (0 <= confidence <= 1):
-                mapping['confidence'] = 0.7
-
-            # Ensure data_type exists
-            if 'data_type' not in mapping:
-                mapping['data_type'] = 'STRING'
+            # Ensure boolean fields are actually boolean
+            mapping['is_pk'] = bool(mapping.get('is_pk', False))
+            mapping['contains_pii'] = bool(mapping.get('contains_pii', False))
 
             validated.append(mapping)
 

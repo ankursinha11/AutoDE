@@ -140,8 +140,8 @@ class DatabricksLogicExtractor:
 
         # Known ADF pipeline base locations
         base_paths = [
-            "./Databricks_repo/adf/pipeline",
-            "./CodebaseIntelligence/Databricks_repo/adf/pipeline",
+            "/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/Databricks_repo/app-insleads-adf/adf/pipeline",
+            "/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/Databricks_repo/*/adf/pipeline",
         ]
 
         for base_path in base_paths:
@@ -238,7 +238,7 @@ class DatabricksLogicExtractor:
             adf_activities = adf_data.get('properties', {}).get('activities', [])
 
             # Recursively extract all activities (including nested ones)
-            all_activities = self._extract_activities_recursive(adf_activities, parent_path="")
+            all_activities = self._extract_activities_recursive(adf_activities, adf_json_path, parent_path="")
 
             logger.info(f"   Extracted {len(all_activities)} total activities from ADF JSON (including nested)")
             return all_activities
@@ -247,12 +247,13 @@ class DatabricksLogicExtractor:
             logger.error(f"Failed to extract activities from ADF JSON: {e}")
             return []
 
-    def _extract_activities_recursive(self, activities_list: List[Dict], parent_path: str = "") -> List[Dict[str, Any]]:
+    def _extract_activities_recursive(self, activities_list: List[Dict], adf_json_path: str, parent_path: str = "") -> List[Dict[str, Any]]:
         """
         Recursively extract activities, including those nested in Switch, IfCondition, ForEach
 
         Args:
             activities_list: List of ADF activity dictionaries
+            adf_json_path: Path to ADF JSON file (for parameter resolution)
             parent_path: Path showing nesting (e.g., "check datasource > es_swift")
 
         Returns:
@@ -268,11 +269,11 @@ class DatabricksLogicExtractor:
             current_path = f"{parent_path} > {activity_name}" if parent_path else activity_name
 
             # Extract Databricks notebook info
-            notebook_path = self._extract_notebook_path(activity)
+            notebook_path = self._extract_notebook_path(activity, adf_json_path)
 
             # Extract inputs/outputs
-            inputs = self._extract_activity_inputs(activity)
-            outputs = self._extract_activity_outputs(activity)
+            inputs = self._extract_activity_inputs(activity, adf_json_path)
+            outputs = self._extract_activity_outputs(activity, adf_json_path)
 
             # Extract transformation description
             transformations = self._extract_transformations_from_activity(activity)
@@ -306,7 +307,7 @@ class DatabricksLogicExtractor:
 
                     # Recursive call for case activities
                     case_path = f"{current_path} [case: {case_value}]"
-                    nested = self._extract_activities_recursive(case_activities, case_path)
+                    nested = self._extract_activities_recursive(case_activities, adf_json_path, case_path)
                     extracted.extend(nested)
 
                 # Also handle default case if present
@@ -314,7 +315,7 @@ class DatabricksLogicExtractor:
                 if default_activities:
                     logger.info(f"        Default case: {len(default_activities)} activities")
                     default_path = f"{current_path} [default]"
-                    nested = self._extract_activities_recursive(default_activities, default_path)
+                    nested = self._extract_activities_recursive(default_activities, adf_json_path, default_path)
                     extracted.extend(nested)
 
             # Handle IfCondition activity
@@ -326,12 +327,12 @@ class DatabricksLogicExtractor:
 
                 if if_true:
                     true_path = f"{current_path} [if true]"
-                    nested = self._extract_activities_recursive(if_true, true_path)
+                    nested = self._extract_activities_recursive(if_true, adf_json_path, true_path)
                     extracted.extend(nested)
 
                 if if_false:
                     false_path = f"{current_path} [if false]"
-                    nested = self._extract_activities_recursive(if_false, false_path)
+                    nested = self._extract_activities_recursive(if_false, adf_json_path, false_path)
                     extracted.extend(nested)
 
             # Handle ForEach activity
@@ -341,18 +342,22 @@ class DatabricksLogicExtractor:
                 if foreach_activities:
                     logger.info(f"      Found ForEach '{activity_name}': {len(foreach_activities)} activities")
                     foreach_path = f"{current_path} [foreach]"
-                    nested = self._extract_activities_recursive(foreach_activities, foreach_path)
+                    nested = self._extract_activities_recursive(foreach_activities, adf_json_path, foreach_path)
                     extracted.extend(nested)
 
         return extracted
 
-    def _extract_notebook_path(self, activity: Dict[str, Any]) -> str:
+    def _extract_notebook_path(self, activity: Dict[str, Any], adf_json_path: str = None) -> str:
         """
         Extract and evaluate Databricks notebook path from activity
 
         Handles:
         - Static paths: "/CDD/bdf_download/process_bdf"
         - Dynamic expressions: "@concat(pipeline().parameters.notebookpath,'process_bdf')"
+
+        Args:
+            activity: Activity dictionary from ADF JSON
+            adf_json_path: Path to ADF JSON file (for parameter resolution)
         """
         # Look in typeProperties.notebookPath
         notebook_path = activity.get('typeProperties', {}).get('notebookPath', {})
@@ -361,8 +366,8 @@ class DatabricksLogicExtractor:
             # It's a dynamic expression
             expression = notebook_path.get('value', 'Unknown')
 
-            # Try to evaluate ADF expression
-            evaluated = self._evaluate_adf_expression(expression)
+            # Try to evaluate ADF expression with parameter resolution
+            evaluated = self._evaluate_adf_expression(expression, adf_json_path)
             return evaluated
 
         elif isinstance(notebook_path, str):
@@ -370,13 +375,13 @@ class DatabricksLogicExtractor:
         else:
             return 'No notebook'
 
-    def _evaluate_adf_expression(self, expression: str) -> str:
+    def _evaluate_adf_expression(self, expression: str, adf_json_path: str = None) -> str:
         """
         Evaluate ADF pipeline expressions to get actual notebook path
 
         Common patterns:
         - @concat(pipeline().parameters.notebookpath,'process_bdf')
-          → Evaluates to: /CDD/bdf_download/process_bdf
+          → Evaluates to: /Insleads-code/CDD/bdf_download/process_bdf
 
         - @concat(parameters('notebookBasePath'),'/merge_swift')
           → Evaluates to: /CDD/bdf_download/merge_swift
@@ -384,36 +389,84 @@ class DatabricksLogicExtractor:
         if not expression or not isinstance(expression, str):
             return expression
 
-        # Pattern 1: @concat(pipeline().parameters.notebookpath,'script_name')
-        # Expected value of notebookpath parameter: /CDD/bdf_download/
-        concat_match = re.search(r'@concat\([^,]+,\s*[\'"]([^\'"]+)[\'"]\)', expression)
+        # Pattern 1: @concat(pipeline().parameters.PARAM_NAME,'script_name')
+        concat_match = re.search(r'@concat\(pipeline\(\)\.parameters\.(\w+),\s*[\'"]([^\'"]+)[\'"]\)', expression)
 
         if concat_match:
-            script_name = concat_match.group(1)
+            param_name = concat_match.group(1)
+            script_name = concat_match.group(2)
 
-            # Infer base path from pipeline context
-            # For bdf_download pipeline, notebookpath = /CDD/bdf_download/
-            # This can be made more robust by reading pipeline parameters
+            # Read the actual parameter default value from ADF JSON
+            base_path = self._get_pipeline_parameter_default(adf_json_path, param_name)
 
-            # For now, use heuristic: CDD workflows use /CDD/workflow_name/
-            base_path = "/CDD/bdf_download"  # TODO: Make this dynamic based on pipeline name
+            if base_path:
+                # Combine base path with script name
+                # Handle trailing slashes
+                base_path = base_path.rstrip('/')
+                result = f"{base_path}/{script_name}"
+                logger.info(f"      ✅ Evaluated expression: {expression} → {result}")
+                return result
+            else:
+                logger.warning(f"      ⚠ Could not find parameter '{param_name}' in ADF JSON")
+                # Fallback: try to infer from expression
+                return f"/Insleads-code/CDD/{script_name}"
 
-            result = f"{base_path}/{script_name}"
-            logger.info(f"      Evaluated expression: {expression} → {result}")
-            return result
+        # Pattern 2: Simple concat without pipeline()
+        simple_concat = re.search(r'@concat\([^,]+,\s*[\'"]([^\'"]+)[\'"]\)', expression)
+        if simple_concat:
+            script_name = simple_concat.group(1)
+            logger.warning(f"      ⚠ Simple concat pattern (no parameter resolution): {expression}")
+            return script_name
 
-        # Pattern 2: @pipeline().parameters.paramName
+        # Pattern 3: @pipeline().parameters.paramName
         # Return as-is with indicator it's a parameter
         if '@pipeline()' in expression or '@parameters(' in expression:
-            logger.warning(f"      Unevaluated parameter expression: {expression}")
+            logger.warning(f"      ⚠ Unevaluated parameter expression: {expression}")
             return expression
 
         # If no pattern matched, return original
         return expression
 
-    def _extract_activity_inputs(self, activity: Dict[str, Any]) -> List[str]:
+    def _get_pipeline_parameter_default(self, adf_json_path: str, param_name: str) -> Optional[str]:
+        """
+        Read pipeline parameter default value from ADF JSON
+
+        Args:
+            adf_json_path: Path to ADF pipeline JSON file
+            param_name: Name of the parameter (e.g., 'notebookpath')
+
+        Returns:
+            Default value of the parameter or None
+        """
+        if not adf_json_path or not Path(adf_json_path).exists():
+            return None
+
+        try:
+            with open(adf_json_path, 'r') as f:
+                adf_data = json.load(f)
+
+            # Navigate to parameters section
+            parameters = adf_data.get('properties', {}).get('parameters', {})
+
+            if param_name in parameters:
+                default_value = parameters[param_name].get('defaultValue', '')
+                logger.debug(f"         Found parameter '{param_name}' = '{default_value}'")
+                return default_value
+            else:
+                logger.debug(f"         Parameter '{param_name}' not found in ADF JSON")
+                return None
+
+        except Exception as e:
+            logger.error(f"         Failed to read ADF parameter: {e}")
+            return None
+
+    def _extract_activity_inputs(self, activity: Dict[str, Any], adf_json_path: str = None) -> List[str]:
         """
         Extract input datasets from activity with enhanced code-based extraction
+
+        Args:
+            activity: ADF activity dictionary
+            adf_json_path: Path to ADF JSON file (for parameter resolution)
 
         Handles patterns like:
         - df = spark.read.format("delta").load("/mnt/adls/bronze/table_name")
@@ -436,7 +489,7 @@ class DatabricksLogicExtractor:
 
         # For DatabricksNotebook activities, try to extract inputs from notebook code
         if activity.get('type') == 'DatabricksNotebook':
-            notebook_path = self._extract_notebook_path(activity)
+            notebook_path = self._extract_notebook_path(activity, adf_json_path)
             if notebook_path:
                 notebook_inputs = self._extract_inputs_from_notebook_code(notebook_path)
                 inputs.extend(notebook_inputs)
@@ -530,9 +583,13 @@ class DatabricksLogicExtractor:
             logger.error(f"      Failed to extract inputs from notebook code: {e}")
             return []
 
-    def _extract_activity_outputs(self, activity: Dict[str, Any]) -> List[str]:
+    def _extract_activity_outputs(self, activity: Dict[str, Any], adf_json_path: str = None) -> List[str]:
         """
         Extract output datasets from activity with enhanced code-based extraction
+
+        Args:
+            activity: ADF activity dictionary
+            adf_json_path: Path to ADF JSON file (for parameter resolution)
 
         Handles patterns like:
         - df.write.format("delta").save("/mnt/adls/silver/table_name")
@@ -556,7 +613,7 @@ class DatabricksLogicExtractor:
 
         # For DatabricksNotebook activities, try to extract outputs from notebook code
         if activity.get('type') == 'DatabricksNotebook':
-            notebook_path = self._extract_notebook_path(activity)
+            notebook_path = self._extract_notebook_path(activity, adf_json_path)
             if notebook_path:
                 notebook_outputs = self._extract_outputs_from_notebook_code(notebook_path)
                 outputs.extend(notebook_outputs)
@@ -664,6 +721,8 @@ class DatabricksLogicExtractor:
         """
         Extract column-level schemas from Databricks notebook for STTM generation
 
+        NEW APPROACH: Link DataFrames to their write operations to get actual table schemas
+
         Returns:
             {
                 'table_name': [
@@ -683,13 +742,447 @@ class DatabricksLogicExtractor:
             with open(notebook_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
 
-            # Use the PySpark extraction logic from HadoopLogicExtractor
-            # Since Databricks notebooks are PySpark, we use the same patterns
-            return self._extract_column_schemas_from_pyspark(content, Path(notebook_path).name)
+            # NEW: Extract with write operation linkage
+            return self._extract_schemas_with_write_linkage(content, Path(notebook_path).name)
 
         except Exception as e:
             logger.error(f"      Failed to extract column schemas from notebook: {e}")
             return {}
+
+    def _extract_schemas_with_write_linkage(self, content: str, notebook_name: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Extract schemas by linking DataFrames to their write operations
+
+        Strategy:
+        1. Parse all .select() operations to build DataFrame -> columns mapping
+        2. Parse all write operations (writecsv, .write, saveAsTable) to get DataFrame -> table_name mapping
+        3. Combine to get table_name -> columns mapping
+        """
+        import re
+
+        logger.info(f"      Parsing PySpark with write linkage in {notebook_name}")
+
+        # Step 1: Build DataFrame schemas from .select() operations
+        dataframe_schemas = self._parse_dataframe_select_operations(content)
+
+        # Step 2: Find write operations and link to table names
+        table_schemas = self._link_dataframes_to_tables(content, dataframe_schemas)
+
+        logger.info(f"      ✅ Extracted {len(table_schemas)} table schemas from {notebook_name}")
+        return table_schemas
+
+    def _parse_dataframe_select_operations(self, content: str) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Parse all .select() and .withColumn() operations to extract DataFrame column schemas
+
+        Returns: {dataframe_name: [columns]}
+        """
+        import re
+
+        dataframe_schemas = {}
+        lines = content.split('\n')
+
+        # Pattern: df_name = source_df.select(...)
+        select_pattern = r'(\w+)\s*=\s*(\w+)\.select\s*\('
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            select_match = re.search(select_pattern, line, re.IGNORECASE)
+
+            if select_match:
+                df_name = select_match.group(1)
+
+                # Extract multi-line select statement
+                select_content = line
+                paren_count = line.count('(') - line.count(')')
+                j = i + 1
+
+                # Continue reading lines until parentheses are balanced
+                while paren_count > 0 and j < len(lines):
+                    select_content += '\n' + lines[j]
+                    paren_count += lines[j].count('(') - lines[j].count(')')
+                    j += 1
+
+                # Extract column definitions
+                columns = self._extract_columns_from_select(select_content, i + 1)
+
+                if columns:
+                    dataframe_schemas[df_name] = columns
+                    logger.debug(f"          Found DataFrame '{df_name}': {len(columns)} columns")
+
+                i = j
+            else:
+                i += 1
+
+        # ALSO parse withColumn() chains (e.g., df = df.withColumn(...).withColumn(...))
+        dataframe_schemas = self._parse_with_column_chains(content, dataframe_schemas)
+
+        return dataframe_schemas
+
+    def _parse_with_column_chains(self, content: str, existing_schemas: Dict[str, List[Dict]]) -> Dict[str, List[Dict]]:
+        """
+        Parse .withColumn() chains to add new columns to existing DataFrame schemas
+
+        Example:
+        allRecs = allRecs \
+            .withColumn("HospitalFk", split(col("ID"), "_").getItem(0)) \
+            .withColumn("PatientAcctId", split(col("ID"), "_").getItem(1)).drop("ID")
+        """
+        import re
+
+        lines = content.split('\n')
+
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+
+            # Pattern: df_name = source_df.withColumn(...)
+            with_col_match = re.search(r'(\w+)\s*=\s*(\w+)\s*\\?\s*$', line)
+            if with_col_match and i + 1 < len(lines) and '.withColumn' in lines[i + 1]:
+                df_name = with_col_match.group(1)
+                source_df = with_col_match.group(2)
+
+                # Collect the chained withColumn calls
+                chain_content = line
+                j = i + 1
+
+                # Continue while we see .withColumn or line continuation
+                while j < len(lines):
+                    next_line = lines[j]
+                    chain_content += '\n' + next_line
+
+                    # Stop if we hit a line that doesn't continue the chain
+                    if not (next_line.strip().startswith('.') or next_line.strip().endswith('\\')):
+                        j += 1
+                        break
+
+                    j += 1
+
+                # Extract withColumn definitions
+                new_columns = self._extract_columns_from_with_column_chain(chain_content, i + 1)
+
+                if new_columns:
+                    # Start with source DataFrame's schema if it exists
+                    if source_df in existing_schemas:
+                        combined_columns = existing_schemas[source_df].copy()
+                    else:
+                        combined_columns = []
+
+                    # Add new columns (removing any that are being replaced)
+                    existing_col_names = {c['name'] for c in combined_columns}
+                    for new_col in new_columns:
+                        # Replace if exists, otherwise append
+                        if new_col['name'] in existing_col_names:
+                            combined_columns = [c for c in combined_columns if c['name'] != new_col['name']]
+                        combined_columns.append(new_col)
+
+                    existing_schemas[df_name] = combined_columns
+                    logger.debug(f"          Found DataFrame '{df_name}' with withColumn chain: {len(combined_columns)} columns total, {len(new_columns)} new")
+
+                i = j
+            else:
+                i += 1
+
+        return existing_schemas
+
+    def _extract_columns_from_with_column_chain(self, chain_content: str, start_line: int) -> List[Dict[str, Any]]:
+        """
+        Extract column definitions from .withColumn() chain
+
+        Example:
+        .withColumn("HospitalFk", split(col("ID"), "_").getItem(0))
+        """
+        import re
+
+        columns = []
+        order = 1
+
+        # Find all .withColumn("name", expression) patterns
+        with_col_pattern = r'\.withColumn\([\'"]([^\'"]+)[\'"]\s*,\s*([^\)]+(?:\([^\)]*\))*[^\)]*)\)'
+
+        for match in re.finditer(with_col_pattern, chain_content):
+            col_name = match.group(1)
+            transformation = match.group(2).strip()
+
+            # Infer type
+            col_type = self._infer_type_from_transformation(transformation)
+
+            columns.append({
+                'name': col_name,
+                'type': col_type,
+                'order': order,
+                'source_line': start_line,
+                'transformation': transformation
+            })
+            order += 1
+
+        return columns
+
+    def _extract_columns_from_select(self, select_statement: str, start_line: int) -> List[Dict[str, Any]]:
+        """
+        Extract column definitions from a .select() statement
+
+        Handles patterns like:
+        - col("value").substr(1,64).alias("ID")
+        - trim(col("FN")).alias("FN")
+        - "ColumnName"
+        - when(col("x") == "", None).otherwise(col("x")).alias("result")
+        """
+        import re
+
+        columns = []
+
+        # Extract content between select()
+        select_match = re.search(r'\.select\s*\((.*)\)', select_statement, re.DOTALL | re.IGNORECASE)
+        if not select_match:
+            return columns
+
+        select_body = select_match.group(1)
+
+        # Split by commas (but not within parentheses)
+        column_expressions = self._split_by_comma_outside_parens(select_body)
+
+        order = 1
+        for expr in column_expressions:
+            expr = expr.strip()
+            if not expr:
+                continue
+
+            # Extract column name and transformation
+            col_info = self._parse_column_expression(expr, start_line, order)
+            if col_info:
+                columns.append(col_info)
+                order += 1
+
+        return columns
+
+    def _split_by_comma_outside_parens(self, text: str) -> List[str]:
+        """Split text by commas, but only those outside parentheses"""
+        parts = []
+        current = []
+        paren_depth = 0
+
+        for char in text:
+            if char == '(':
+                paren_depth += 1
+                current.append(char)
+            elif char == ')':
+                paren_depth -= 1
+                current.append(char)
+            elif char == ',' and paren_depth == 0:
+                parts.append(''.join(current))
+                current = []
+            else:
+                current.append(char)
+
+        if current:
+            parts.append(''.join(current))
+
+        return parts
+
+    def _parse_column_expression(self, expr: str, line_num: int, order: int) -> Optional[Dict[str, Any]]:
+        """
+        Parse a single column expression to extract name, type, transformation
+
+        Examples:
+        - col("value").substr(1,64).alias("ID") -> name=ID, transformation=substr(1,64)
+        - trim(col("FN")).alias("FN") -> name=FN, transformation=trim
+        - "ColumnName" -> name=ColumnName
+        """
+        import re
+
+        # Pattern 1: .alias("name")
+        alias_match = re.search(r'\.alias\([\'"]([^\'"]+)[\'"]\)', expr)
+        if alias_match:
+            col_name = alias_match.group(1)
+
+            # Extract transformation (everything before .alias)
+            transformation = re.sub(r'\.alias\([^\)]+\)$', '', expr).strip()
+
+            # Determine type based on transformations
+            col_type = self._infer_type_from_transformation(transformation)
+
+            return {
+                'name': col_name,
+                'type': col_type,
+                'order': order,
+                'source_line': line_num,
+                'transformation': transformation
+            }
+
+        # Pattern 2: Simple string column name "ColumnName"
+        simple_match = re.match(r'^[\'"]([^\'"]+)[\'"]$', expr.strip())
+        if simple_match:
+            col_name = simple_match.group(1)
+            return {
+                'name': col_name,
+                'type': 'STRING',
+                'order': order,
+                'source_line': line_num,
+                'transformation': 'DIRECT'
+            }
+
+        return None
+
+    def _infer_type_from_transformation(self, transformation: str) -> str:
+        """Infer data type from transformation expression"""
+        transformation_lower = transformation.lower()
+
+        if 'substr' in transformation_lower:
+            return 'STRING'
+        elif 'trim' in transformation_lower:
+            return 'STRING'
+        elif 'split' in transformation_lower and 'getitem(0)' in transformation_lower:
+            # split().getItem(0) for HospitalFk
+            return 'SHORT'
+        elif 'split' in transformation_lower:
+            return 'STRING'
+        elif 'when' in transformation_lower or 'otherwise' in transformation_lower:
+            return 'STRING'
+        elif 'lit(' in transformation_lower:
+            return 'STRING'
+        elif 'count(' in transformation_lower:
+            return 'LONG'
+        else:
+            return 'STRING'  # Default
+
+    def _link_dataframes_to_tables(self, content: str, dataframe_schemas: Dict[str, List[Dict]]) -> Dict[str, List[Dict]]:
+        """
+        Find write operations and link DataFrames to table names
+
+        ENHANCED: Trace DataFrame lineage backwards to get the FULLEST schema available
+
+        Handles:
+        - writecsv(spark, df_name, baseurl+path+'table_name/'+bc, ...)
+        - df.write.parquet(path)
+        - df.write.saveAsTable("table_name")
+        """
+        import re
+
+        # First, build DataFrame lineage (df_name -> source_df_name)
+        df_lineage = self._build_dataframe_lineage(content)
+
+        table_schemas = {}
+        lines = content.split('\n')
+
+        for line in lines:
+            # Pattern 1: writecsv(spark, df_name, baseurl+outputBaseDir+'table_name/'+bc,...)
+            # Extract DataFrame name (2nd parameter)
+            writecsv_match = re.search(r'writecsv\([^,]+,\s*(\w+)\s*,', line)
+            if writecsv_match:
+                df_name = writecsv_match.group(1)
+
+                # Extract table name from path (look for +'table_name/'+)
+                table_match = re.search(r"\+['\"]([^/'\"]+)/['\"]", line)
+                if table_match:
+                    table_name = table_match.group(1)
+
+                    # Clean table name (remove extensions, suffixes)
+                    table_name = re.sub(r'-M1$', '', table_name)  # Remove -M1 suffix
+
+                    # Get fullest schema by tracing lineage
+                    full_schema = self._get_fullest_schema(df_name, df_lineage, dataframe_schemas)
+
+                    if full_schema:
+                        if table_name not in table_schemas:
+                            table_schemas[table_name] = []
+                        # Merge columns (avoid duplicates)
+                        existing_cols = {c['name'] for c in table_schemas[table_name]}
+                        for col in full_schema:
+                            if col['name'] not in existing_cols:
+                                table_schemas[table_name].append(col)
+                        logger.debug(f"          Linked DataFrame '{df_name}' -> Table '{table_name}' ({len(full_schema)} columns)")
+
+            # Pattern 2: df.write.parquet(...) or df.write.saveAsTable(...)
+            write_match = re.search(r'(\w+)\.write\.(parquet|saveAsTable)\([\'"]?([^\'"]+)', line)
+            if write_match:
+                df_name = write_match.group(1)
+                path_or_table = write_match.group(3)
+
+                # Extract table name from path
+                table_name = path_or_table.split('/')[-1] if '/' in path_or_table else path_or_table
+
+                # Get fullest schema by tracing lineage
+                full_schema = self._get_fullest_schema(df_name, df_lineage, dataframe_schemas)
+
+                if full_schema:
+                    if table_name not in table_schemas:
+                        table_schemas[table_name] = []
+                    existing_cols = {c['name'] for c in table_schemas[table_name]}
+                    for col in full_schema:
+                        if col['name'] not in existing_cols:
+                            table_schemas[table_name].append(col)
+                    logger.debug(f"          Linked DataFrame '{df_name}' -> Table '{table_name}' ({len(full_schema)} columns)")
+
+        return table_schemas
+
+    def _build_dataframe_lineage(self, content: str) -> Dict[str, str]:
+        """
+        Build DataFrame lineage: {df_name: source_df_name}
+
+        Examples:
+        - distinctRecsSelectedFields = distinctRecs.select(...) -> {distinctRecsSelectedFields: distinctRecs}
+        - allRecs = postBDF.select(...) -> {allRecs: postBDF}
+        """
+        import re
+
+        lineage = {}
+        lines = content.split('\n')
+
+        for line in lines:
+            # Pattern: df_name = source_df.select(...)
+            select_match = re.search(r'(\w+)\s*=\s*(\w+)\.select\s*\(', line)
+            if select_match:
+                df_name = select_match.group(1)
+                source_df = select_match.group(2)
+                lineage[df_name] = source_df
+
+            # Pattern: df_name = source_df.withColumn(...)
+            with_col_match = re.search(r'(\w+)\s*=\s*(\w+)\.withColumn\s*\(', line)
+            if with_col_match:
+                df_name = with_col_match.group(1)
+                source_df = with_col_match.group(2)
+                lineage[df_name] = source_df
+
+            # Pattern: df_name = source_df.filter(...) or .groupBy(...) etc.
+            transform_match = re.search(r'(\w+)\s*=\s*(\w+)\.(filter|groupBy|join|union|dropDuplicates)\s*\(', line)
+            if transform_match:
+                df_name = transform_match.group(1)
+                source_df = transform_match.group(2)
+                lineage[df_name] = source_df
+
+        return lineage
+
+    def _get_fullest_schema(self, df_name: str, lineage: Dict[str, str], schemas: Dict[str, List[Dict]]) -> List[Dict]:
+        """
+        Get the fullest schema by tracing DataFrame lineage backwards
+
+        Strategy: Walk the lineage chain and return the schema with the MOST columns
+        """
+        visited = set()
+        candidate_schemas = []
+
+        current_df = df_name
+
+        # Trace backwards through lineage
+        while current_df and current_df not in visited:
+            visited.add(current_df)
+
+            # If this DataFrame has a schema, add it as a candidate
+            if current_df in schemas:
+                candidate_schemas.append((current_df, schemas[current_df]))
+
+            # Move to source DataFrame
+            current_df = lineage.get(current_df)
+
+        # Return the schema with the most columns
+        if candidate_schemas:
+            fullest = max(candidate_schemas, key=lambda x: len(x[1]))
+            logger.debug(f"             Traced lineage: {df_name} -> {fullest[0]} ({len(fullest[1])} columns)")
+            return fullest[1]
+
+        return []
 
     def _extract_column_schemas_from_pyspark(self, content: str, notebook_name: str) -> Dict[str, List[Dict[str, Any]]]:
         """
@@ -1334,4 +1827,3 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("Note: Full functionality requires indexer and AI analyzer")
     print("=" * 80)
-
