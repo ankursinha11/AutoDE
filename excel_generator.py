@@ -416,10 +416,25 @@ class ExcelGenerator:
         steps = abinitio_logic.get('steps', [])
 
         for step in steps:
-            step_num = step.get('step_number', '')
-            component = step.get('dataset', '') or step.get('component', '')
-            comp_type = step.get('component_type', '')
-            transformation = step.get('transformation_rules', '')
+            # Handle both dict and string formats
+            if isinstance(step, dict):
+                step_num = step.get('step_number', '')
+                component = step.get('dataset', '') or step.get('component', '')
+                comp_type = step.get('component_type', '')
+                transformation = step.get('transformation_rules', '')
+                step_by_step = step.get('step_by_step_logic', [])
+            elif isinstance(step, str):
+                step_num = ''
+                component = step
+                comp_type = ''
+                transformation = ''
+                step_by_step = []
+            else:
+                step_num = ''
+                component = 'Unknown step'
+                comp_type = ''
+                transformation = ''
+                step_by_step = []
 
             # Main component row
             ws.cell(row=current_row, column=1, value=step_num)
@@ -438,7 +453,6 @@ class ExcelGenerator:
             current_row += 1
 
             # Add step-by-step logic items (if available)
-            step_by_step = step.get('step_by_step_logic', [])
             if step_by_step:
                 for i, logic_step in enumerate(step_by_step, 1):
                     ws.cell(row=current_row, column=1, value=f"  {i}")
@@ -889,10 +903,22 @@ class ExcelGenerator:
                 })
         elif system == 'abinitio':
             for step in logic.get('steps', []):
-                items.append({
-                    'name': step.get('dataset', ''),
-                    'details': f"Type: {step.get('component_type', '')}\nTransformation: {step.get('transformation_rules', '')}"
-                })
+                # Handle both dict and string formats
+                if isinstance(step, dict):
+                    items.append({
+                        'name': step.get('dataset', ''),
+                        'details': f"Type: {step.get('component_type', '')}\nTransformation: {step.get('transformation_rules', '')}"
+                    })
+                elif isinstance(step, str):
+                    items.append({
+                        'name': step,
+                        'details': ''
+                    })
+                else:
+                    items.append({
+                        'name': 'Unknown step',
+                        'details': ''
+                    })
         elif system == 'databricks':
             for activity in logic.get('activities', []):
                 items.append({

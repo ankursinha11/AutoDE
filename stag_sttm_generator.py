@@ -470,9 +470,13 @@ Now extract the COMPLETE schema:
             steps = logic.get('steps', [])
             if steps:
                 context_parts.append("\nOutput Components:")
-                output_steps = [s for s in steps if 'output' in s.get('component_type', '').lower()]
+                # Handle both dict and string formats
+                output_steps = [s for s in steps if isinstance(s, dict) and 'output' in s.get('component_type', '').lower()]
                 for step in output_steps[:3]:
-                    context_parts.append(f"  - {step['dataset']}: {step.get('transformation_rules', '')}")
+                    if isinstance(step, dict):
+                        dataset = step.get('dataset', 'Unknown')
+                        transformation = step.get('transformation_rules', '')
+                        context_parts.append(f"  - {dataset}: {transformation}")
 
         elif system == 'databricks':
             # Include notebook outputs and sink information
@@ -1020,7 +1024,9 @@ Now generate the COMPLETE 13-column STTM for ALL target columns:
                 outputs.extend(job.get('outputs', []))
         elif system == 'abinitio':
             for step in logic.get('steps', []):
-                outputs.extend(step.get('outputs', []))
+                # Handle both dict and string formats
+                if isinstance(step, dict):
+                    outputs.extend(step.get('outputs', []))
         elif system == 'databricks':
             for activity in logic.get('activities', []):
                 outputs.extend(activity.get('outputs', []))
