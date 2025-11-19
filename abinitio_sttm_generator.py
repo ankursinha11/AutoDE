@@ -198,15 +198,19 @@ class AbInitioSTTMGenerator:
                 })
 
             # Wrap in "graph" key for step3 compatibility
+            # Match the structure created by real step1 (step1_extract_graph1_details.py:242-251)
             graph_details = {
-                "graph": graph_structure,
                 "extraction_metadata": {
-                    "total_graphs_processed": 1,
-                    "main_graph_id": "1",
-                    "main_graph_name": base_filename,
+                    "source_file": str(parsed_json_path),
+                    "target_graph_id": "1",
+                    "total_graphs_extracted": 1,
+                    "extracted_graph_ids": ["1"],
+                    "original_metadata": {},
+                    # Additional fields for compatibility
                     "extraction_method": "simplified",
                     "timestamp": str(Path(parsed_json_path).stat().st_mtime)
-                }
+                },
+                "graph": graph_structure
             }
 
             # Save output
