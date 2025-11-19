@@ -134,80 +134,94 @@ class AbInitioSTTMGenerator:
             Path to graph details JSON, or None if failed
         """
         try:
-            # Import step1 module
-            from .step1_extract_graph1_details import GraphDetailExtractor
+            # Import step1 module (class name is GraphExtractor, not GraphDetailExtractor)
+            from .step1_extract_graph1_details import GraphExtractor
 
             # Create extractor
-            extractor = GraphDetailExtractor(
-                input_json_path=str(parsed_json_path),
-                output_folder=output_dir,
-                base_filename=base_filename
+            extractor = GraphExtractor(
+                subgraph_json_path=str(parsed_json_path)
             )
 
-            # Run extraction
-            extractor.run()
+            # Run extraction (extract_detailed_graph returns the data, need to save it)
+            detailed_graph_data = extractor.extract_detailed_graph(target_graph_id="1")
 
-            # Return path to output
+            # Save to output file
             output_file = output_dir / f"{base_filename}_detailed_graph1.json"
-            if output_file.exists():
-                logger.info(f"Step 1 complete: {output_file}")
-                return output_file
-            else:
-                logger.error(f"Step 1 output not found: {output_file}")
-                return None
+            extractor.save_to_file(detailed_graph_data, str(output_file))
+
+            logger.info(f"Step 1 complete: {output_file}")
+            return output_file
 
         except ImportError as e:
-            logger.warning(f"Step 1 import failed, using simplified extraction: {e}")
+            logger.warning(f"Step 1 import failed, using enhanced extraction: {e}")
             return self._simplified_step1(parsed_json_path, output_dir, base_filename)
         except Exception as e:
-            logger.error(f"Step 1 failed: {e}")
-            return None
+            # If real step1 fails (wrong format), fall back to enhanced version
+            logger.warning(f"Step 1 execution failed (likely format mismatch), using enhanced extraction: {e}")
+            return self._simplified_step1(parsed_json_path, output_dir, base_filename)
 
     def _simplified_step1(self, parsed_json_path: Path, output_dir: Path, base_filename: str) -> Optional[Path]:
         """
-        Simplified step1 that extracts graph structure from parsed components
+        Enhanced step1 that converts STAG format to VM_Automation format WITH raw_content
+        This enables Step2 LLM extraction and better output identification
         """
         try:
             with open(parsed_json_path, 'r') as f:
                 parsed_data = json.load(f)
 
-            # Build graph structure with nested "graph" key (required by step3)
+            # Get raw_content from enhanced parser output
+            file_raw_content = parsed_data.get('raw_content', '')
+
+            # Build vertices dict (VM_Automation format expects dict, not list)
+            vertices_dict = {}
+            for vid, vdata in parsed_data.get('vertices', {}).items():
+                vertices_dict[vid] = {
+                    "vertex_name": vdata.get('name', 'Unknown'),
+                    "type": vdata.get('component_type', vdata.get('type', 'Unknown')),
+                    "raw_content": vdata.get('raw_content', ''),  # Component raw content for LLM
+                    "component_id": vdata.get('component_id', vid),
+                    # Add data_in/data_out from ports if available
+                    "data_in": [],
+                    "data_out": []
+                }
+
+            # Build flows dict
+            flows_dict = {}
+            for fid, fdata in parsed_data.get('flows', {}).items():
+                flows_dict[fid] = {
+                    "flow_name": fdata.get('name', f'flow_{fid}'),
+                    "component_id": fdata.get('component_id', fid),
+                    "raw_content": fdata.get('raw_content', ''),
+                    "type": fdata.get('component_type', 'XXGflow')
+                }
+
+            # Build graph structure (VM_Automation format)
             graph_structure = {
                 "graph_id": "1",
+                "id": "1",
                 "name": base_filename,
                 "level": 0,
-                "vertices": [],
-                "flows": [],
+                "raw_content": file_raw_content,  # CRITICAL: Full .mp file for LLM extraction
+                "vertices": vertices_dict,  # Dict format, not list
+                "subgraph_references": [],
+                "statistics": {
+                    "vertex_count": len(vertices_dict),
+                    "data_connection_count": 0,
+                    "config_connection_count": 0,
+                    "subgraph_reference_count": 0
+                },
                 "dependencies": []
             }
 
-            # Extract vertices
-            for vid, vdata in parsed_data.get('vertices', {}).items():
-                graph_structure["vertices"].append({
-                    "id": vid,
-                    "name": vdata.get('name', 'Unknown'),
-                    "type": vdata.get('type', 'Unknown')
-                })
-
-            # Extract flows
-            for fid, fdata in parsed_data.get('flows', {}).items():
-                graph_structure["flows"].append({
-                    "id": fid,
-                    "source": fdata.get('source', ''),
-                    "target": fdata.get('target', '')
-                })
-
-            # Wrap in "graph" key for step3 compatibility
-            # Match the structure created by real step1 (step1_extract_graph1_details.py:242-251)
+            # Build complete extraction_metadata (matches real step1)
             graph_details = {
                 "extraction_metadata": {
                     "source_file": str(parsed_json_path),
                     "target_graph_id": "1",
                     "total_graphs_extracted": 1,
-                    "extracted_graph_ids": ["1"],
-                    "original_metadata": {},
-                    # Additional fields for compatibility
-                    "extraction_method": "simplified",
+                    "extracted_graph_ids": ["1"],  # Required by step3:1729
+                    "original_metadata": parsed_data.get('metadata', {}),
+                    "extraction_method": "enhanced_with_raw_content",
                     "timestamp": str(Path(parsed_json_path).stat().st_mtime)
                 },
                 "graph": graph_structure
@@ -218,11 +232,14 @@ class AbInitioSTTMGenerator:
             with open(output_file, 'w') as f:
                 json.dump(graph_details, f, indent=2)
 
-            logger.info(f"Simplified step 1 complete: {output_file}")
+            logger.info(f"Enhanced step 1 complete with raw_content: {output_file}")
+            logger.info(f"  Vertices: {len(vertices_dict)}, Raw content size: {len(file_raw_content)} chars")
             return output_file
 
         except Exception as e:
-            logger.error(f"Simplified step 1 failed: {e}")
+            logger.error(f"Enhanced step 1 failed: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def _run_step2(self, graph_details_path: Path, output_dir: Path, base_filename: str) -> Optional[Path]:
@@ -238,28 +255,21 @@ class AbInitioSTTMGenerator:
             Path to enriched graph JSON, or None if failed
         """
         try:
-            # Import step2 module
-            from .step2_embed_dml_xfr import DMLXFREmbed
+            # Import step2 module (class name is DMLXFREmbedder, not DMLXFREmbed)
+            from .step2_embed_dml_xfr import DMLXFREmbedder
 
             # Create embedder
-            embedder = DMLXFREmbed(
+            embedder = DMLXFREmbedder(
                 detailed_graph_path=str(graph_details_path),
-                blade_path=str(self.blade_path) if self.blade_path else None,
-                output_folder=output_dir,
-                base_filename=base_filename
+                data_folder=str(self.blade_path) if self.blade_path else "data"
             )
 
-            # Run embedding
-            embedder.run()
-
-            # Return path to output
+            # Run embedding and save to output file
             output_file = output_dir / f"{base_filename}_detailed_graph1_with_files.json"
-            if output_file.exists():
-                logger.info(f"Step 2 complete: {output_file}")
-                return output_file
-            else:
-                logger.error(f"Step 2 output not found: {output_file}")
-                return None
+            embedder.embed_files(output_path=str(output_file))
+
+            logger.info(f"Step 2 complete: {output_file}")
+            return output_file
 
         except ImportError as e:
             logger.warning(f"Step 2 import failed, skipping DML embedding: {e}")
