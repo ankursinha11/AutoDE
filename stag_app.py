@@ -1828,7 +1828,8 @@ Content (first 8000 chars):
 
             full_content = content
             if len(content) > MAX_CONTENT_SIZE:
-                logger.warning(f"⚠️ Truncating large file {file_path.name} from {len(content)} to {MAX_CONTENT_SIZE} chars")
+                logger.warning(f"⚠️ Truncating RAW mp file content for {file_path.name} from {len(content)} to {MAX_CONTENT_SIZE} chars")
+                logger.info(f"   ℹ️  Note: PARSED components (vertices/flows/ports) are FULLY embedded, only raw mp content truncated")
                 content_for_db = content[:MAX_CONTENT_SIZE] + "\n\n... (content truncated for database storage, full content available in file)"
             else:
                 content_for_db = content
@@ -1941,6 +1942,12 @@ Content (first 8000 chars):
                 metadata["vertices_count"] = len(parsed_components.get('vertices', {})) if parsed_components else 0
                 metadata["flows_count"] = len(parsed_components.get('flows', {})) if parsed_components else 0
                 metadata["ports_count"] = len(parsed_components.get('ports', {})) if parsed_components else 0
+
+                # Log what's being embedded
+                total_embedded_size = len(doc_content)
+                parsed_section_size = len(parsed_components_section)
+                logger.info(f"   📦 Embedded in vector DB: {metadata['vertices_count']} vertices, {metadata['flows_count']} flows, {metadata['ports_count']} ports")
+                logger.info(f"   📏 Document size: {total_embedded_size:,} chars (parsed components: {parsed_section_size:,} chars)")
 
             # Add external artifact paths to metadata
             if graphflow_excel_path:
