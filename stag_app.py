@@ -1202,20 +1202,44 @@ def render_reindex_abinitio_ui():
 
     if index_mode == "🎯 Single Priority Graph":
         st.markdown("**🎯 Index Single Priority Graph**")
-        st.caption("Perfect for testing, demos, or focused analysis with full STTM generation")
+        st.caption("Perfect for testing, demos, or focused analysis")
 
         # Single graph file input
         single_graph_path = st.text_input(
             "Graph File Path",
-            placeholder="Input Files/blade/mp/1500_CDD_TUSourcedFamilyMemberLink.mp",
+            placeholder="Input Files/blade/mp/265_fileTransferToHadoopServer.mp",
             help="Full path to a single .mp file"
         )
 
+        # Options for large graphs
+        st.markdown("**Pipeline Options**")
+        col1, col2 = st.columns(2)
+        with col1:
+            generate_graphflow = st.checkbox("Generate GraphFlow Excel", value=True, help="Multi-sheet visualization")
+        with col2:
+            generate_sttm = st.checkbox("Generate STTM", value=True, help="Uncheck for large graphs (>200 vertices) to avoid rate limits")
+
+        if not generate_graphflow and not generate_sttm:
+            st.warning("⚠️ At least one option must be selected (GraphFlow or STTM)")
+
+        st.info("💡 **Tip**: For large graphs (>200 vertices), uncheck STTM to avoid rate limits. GraphFlow + Vector DB indexing is still very useful!")
+
         if st.button("Index Single Graph", type="primary"):
             if single_graph_path and Path(single_graph_path).exists():
-                with st.spinner(f"🔄 Indexing single graph with full pipeline..."):
-                    st.info("📋 This will: Parse → Generate GraphFlow → Generate STTM → Index in Vector DB")
-                    reindex_single_abinitio_graph(single_graph_path)
+                if generate_graphflow or generate_sttm:
+                    with st.spinner(f"🔄 Indexing single graph..."):
+                        pipeline_str = []
+                        if generate_graphflow:
+                            pipeline_str.append("GraphFlow")
+                        if generate_sttm:
+                            pipeline_str.append("STTM")
+                        st.info(f"📋 Pipeline: Parse → {' → '.join(pipeline_str)} → Vector DB")
+
+                        reindex_single_abinitio_graph(
+                            single_graph_path,
+                            generate_graphflow=generate_graphflow,
+                            generate_sttm=generate_sttm
+                        )
             else:
                 st.error(f"❌ File not found: {single_graph_path}")
 
@@ -2295,10 +2319,15 @@ def reindex_abinitio_from_directory(directory_path: str):
         progress_bar.empty()
 
 
-def reindex_single_abinitio_graph(graph_file_path: str):
+def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool = True, generate_sttm: bool = True):
     """
-    Index a single Ab Initio graph with full pipeline:
-    Parse → GraphFlow → STTM → Vector DB
+    Index a single Ab Initio graph with configurable pipeline:
+    Parse → [GraphFlow] → [STTM] → Vector DB
+
+    Args:
+        graph_file_path: Path to .mp file
+        generate_graphflow: If True, generate GraphFlow Excel (default: True)
+        generate_sttm: If False, skip STTM generation for large graphs (default: True)
 
     Perfect for focused testing, demos, or priority graphs with rate limit handling.
     """
@@ -2360,84 +2389,96 @@ def reindex_single_abinitio_graph(graph_file_path: str):
         # Warn if large graph
         if vertex_count > 200:
             st.warning(f"⚠️ Large graph with {vertex_count} vertices - may consume many tokens and hit rate limits")
+            if generate_sttm:
+                st.info("💡 Consider unchecking 'Generate STTM' option to avoid rate limits for this large graph")
 
-        # STEP 2: Generate GraphFlow Excel
-        status_text.text(f"📊 Step 2/4: Generating GraphFlow Excel visualization...")
-        progress_bar.progress(35)
-
-        from parsers.abinitio.graph_flow.excel_generator import GraphFlowExcelGenerator
-        graphflow_gen = GraphFlowExcelGenerator()
-
-        graphflow_result = graphflow_gen.generate_from_parsed_json(
-            parsed_json_path=str(parsed_json_path),
-            output_folder=str(graphflow_folder),
-            base_filename=base_filename
-        )
-
-        if graphflow_result['success']:
-            st.success(f"✅ Step 2 Complete: GraphFlow Excel → {graphflow_result['excel_file']}")
-        else:
-            st.warning(f"⚠️ Step 2 Failed: {graphflow_result.get('error')}")
-
-        # STEP 3: Generate STTM with retry handling
-        status_text.text(f"📋 Step 3/4: Generating STTM with enhanced pipeline (with rate limit retry)...")
-        progress_bar.progress(50)
-
-        from parsers.abinitio.automation.abinitio_sttm_generator import AbInitioSTTMGenerator
-
-        sttm_gen = AbInitioSTTMGenerator(
-            blade_path="Input Files/blade/dml",
-            output_folder=str(sttm_folder),
-            ai_analyzer=st.session_state.ai_analyzer
-        )
-
-        # Retry logic for rate limits
-        max_retries = 3
+        # Initialize result variables
+        graphflow_result = {'success': False}
         sttm_success = False
+        sttm_result = {}
 
-        for attempt in range(max_retries):
-            try:
-                st.info(f"   Attempt {attempt + 1}/{max_retries}...")
+        # STEP 2: Generate GraphFlow Excel (if enabled)
+        if generate_graphflow:
+            status_text.text(f"📊 Step 2: Generating GraphFlow Excel visualization...")
+            progress_bar.progress(35)
 
-                sttm_result = sttm_gen.generate_sttm_from_parsed_json(
-                    parsed_json_path=str(parsed_json_path)
-                )
+            from parsers.abinitio.graph_flow.excel_generator import GraphFlowExcelGenerator
+            graphflow_gen = GraphFlowExcelGenerator()
 
-                if sttm_result['success']:
-                    sttm_success = True
-                    st.success(f"✅ Step 3 Complete: STTM generated → {sttm_result.get('excel_file')}")
+            graphflow_result = graphflow_gen.generate_from_parsed_json(
+                parsed_json_path=str(parsed_json_path),
+                output_folder=str(graphflow_folder),
+                base_filename=base_filename
+            )
 
-                    # Check outputs
-                    if sttm_result.get('json_file') and Path(sttm_result['json_file']).exists():
-                        import json
-                        with open(sttm_result['json_file'], 'r') as f:
-                            sttm_data = json.load(f)
-                            outputs = sttm_data.get('outputs', [])
-                            if len(outputs) > 0:
-                                st.success(f"   🎯 Identified {len(outputs)} output(s)!")
-                            else:
-                                st.warning("   ⚠️ No outputs identified")
-                    break
-                else:
-                    st.error(f"❌ STTM generation failed: {sttm_result.get('error')}")
-                    break
+            if graphflow_result['success']:
+                st.success(f"✅ GraphFlow Excel → {graphflow_result['excel_file']}")
+            else:
+                st.warning(f"⚠️ GraphFlow generation failed: {graphflow_result.get('error')}")
+        else:
+            st.info("⏭️ Skipping GraphFlow Excel generation")
 
-            except Exception as e:
-                error_str = str(e)
+        # STEP 3: Generate STTM with retry handling (if enabled)
+        if generate_sttm:
+            status_text.text(f"📋 Step 3: Generating STTM with enhanced pipeline (with rate limit retry)...")
+            progress_bar.progress(50)
 
-                # Check for rate limit
-                if "429" in error_str or "RateLimitReached" in error_str:
-                    if attempt < max_retries - 1:
-                        wait_time = 60 * (2 ** attempt)  # 60s, 120s, 240s
-                        st.warning(f"   ⚠️ Rate limit hit! Waiting {wait_time}s before retry...")
-                        time.sleep(wait_time)
-                    else:
-                        st.error("   ❌ Rate limit exceeded after 3 retries. Try again later.")
+            from parsers.abinitio.automation.abinitio_sttm_generator import AbInitioSTTMGenerator
+
+            sttm_gen = AbInitioSTTMGenerator(
+                blade_path="Input Files/blade/dml",
+                output_folder=str(sttm_folder),
+                ai_analyzer=st.session_state.ai_analyzer
+            )
+
+            # Retry logic for rate limits
+            max_retries = 3
+
+            for attempt in range(max_retries):
+                try:
+                    st.info(f"   Attempt {attempt + 1}/{max_retries}...")
+
+                    sttm_result = sttm_gen.generate_sttm_from_parsed_json(
+                        parsed_json_path=str(parsed_json_path)
+                    )
+
+                    if sttm_result['success']:
+                        sttm_success = True
+                        st.success(f"✅ STTM generated → {sttm_result.get('excel_file')}")
+
+                        # Check outputs
+                        if sttm_result.get('json_file') and Path(sttm_result['json_file']).exists():
+                            import json
+                            with open(sttm_result['json_file'], 'r') as f:
+                                sttm_data = json.load(f)
+                                outputs = sttm_data.get('outputs', [])
+                                if len(outputs) > 0:
+                                    st.success(f"   🎯 Identified {len(outputs)} output(s)!")
+                                else:
+                                    st.warning("   ⚠️ No outputs identified")
                         break
-                else:
-                    st.error(f"   ❌ Error: {e}")
-                    logger.error(f"STTM generation error: {e}", exc_info=True)
-                    break
+                    else:
+                        st.error(f"❌ STTM generation failed: {sttm_result.get('error')}")
+                        break
+
+                except Exception as e:
+                    error_str = str(e)
+
+                    # Check for rate limit
+                    if "429" in error_str or "RateLimitReached" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 60 * (2 ** attempt)  # 60s, 120s, 240s
+                            st.warning(f"   ⚠️ Rate limit hit! Waiting {wait_time}s before retry...")
+                            time.sleep(wait_time)
+                        else:
+                            st.error("   ❌ Rate limit exceeded after 3 retries. Try again later.")
+                            break
+                    else:
+                        st.error(f"   ❌ Error: {e}")
+                        logger.error(f"STTM generation error: {e}", exc_info=True)
+                        break
+        else:
+            st.info("⏭️ Skipping STTM generation (unchecked for large graph)")
 
         # STEP 4: Index in Vector DB
         status_text.text(f"💾 Step 4/4: Indexing in vector database...")
