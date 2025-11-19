@@ -1,77 +1,59 @@
 ================================================================================
-🎯 Extracting detailed hierarchy for Graph ID: 1
-================================================================================
-
-📂 Loading subgraph JSON from: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\parsed_abinitio\265_fileTransferToHadoopServer_components.json
-✅ Loaded 0 subgraphs from JSON
-🔍 Processing graph ID: 1 (Level 0)
-❌ Graph ID 1 not found in subgraphs
-2025-11-19 18:10:02.641 | WARNING  | parsers.abinitio.automation.abinitio_sttm_generator:_run_step1:160 - Step 1 execution failed (likely format mismatch), using enhanced extraction: Graph ID 1 not found or could not be processed
-2025-11-19 18:10:02.648 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_simplified_step1:235 - Enhanced step 1 complete with raw_content: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_detailed_graph1.json
-2025-11-19 18:10:02.648 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_simplified_step1:236 -   Vertices: 14, Raw content size: 59412 chars
-2025-11-19 18:10:02.648 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:generate_sttm_from_parsed_json:100 - Step 2: Embedding DML/XFR content...
-🔧 Initializing GPT-5 LLM...
-✅ GPT-5 LLM initialized (Model: gpt-5)
-
-📂 Loading files from: Input Files\blade (including all subfolders)
-
-✅ Total files loaded: 0
-   Available files: []
-
-
-================================================================================
 STEP 2: EMBED DML/XFR FILES (HIERARCHICAL PROCESSING)
 ================================================================================
 
-pServer_detailed_graph1.json
+📖 Loading: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1.json
 ✅ Loaded successfully!
 
-🔄 Starting hierarchical processing (deepest level first)...
+🔄 Starting hierarchical processing (deepest level first)...       
 
 
-============================================================
-📊 Graph 1: 265_fileTransferToHadoopServer (Level 0)
-============================================================
+============================================================       
+📊 Graph 1: 265_fileTransferToHadoopServerAdhoc_remove (Level 0)   
+============================================================       
 
 🔄 Processing Graph 1...
-   Vertices: 14
+   Vertices: 427
    🤖 Calling GPT-5 to extract files from Graph 1...
-   📄 Found 3 unique file(s): ['error-info.dml', 'PatientAccts.dml', 'log-info.dml']
-      ⚠️  error-info.dml NOT FOUND in data/ folder
-      ⚠️  PatientAccts.dml NOT FOUND in data/ folder
-      ⚠️  log-info.dml NOT FOUND in data/ folder
+❌ Error invoking GPT-5: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-5 for gpt-5 in East US 2 have exceeded the token rate limit for your current AIServices S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-12-01-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}
+   ❌ Error extracting files: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-5 for gpt-5 in East US 2 have exceeded the token rate limit for your current AIServices S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-12-01-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}
+   ➖ No .dml/.xfr files referenced
 
 ✅ Graph 1 processing complete!
 
 ================================================================================
-💾 Saving to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_detailed_graph1_with_files.json
-✅ Saved successfully! File size: 105.85 KB
+💾 Saving to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1_with_files.json
+✅ Saved successfully! File size: 2330.66 KB
 
 ================================================================================
 📊 SUMMARY
 ================================================================================
 Total file references embedded: 0
-Output file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_detailed_graph1_with_files.json
+Output file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1_with_files.json
 ================================================================================
 
 ✅ STEP 2 COMPLETE!
 
-2025-11-19 18:10:26.080 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_run_step2:271 - Step 2 complete: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_detailed_graph1_with_files.json
-2025-11-19 18:10:26.080 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:generate_sttm_from_parsed_json:110 - Step 3: Generating STTM mapping with GPT-5...
+2025-11-19 18:51:43.243 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_run_step2:271 - Step 2 complete: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1_with_files.json
+2025-11-19 18:51:43.243 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:generate_sttm_from_parsed_json:110 - Step 3: Generating STTM mapping with GPT-5...
 🔧 Using STAG's AI analyzer for STTM generation...
 ✅ AI analyzer initialized
 
 
 ╔════════════════════════════════════════════════════════════════════════════╗
 ║    STEP 3: SOURCE-TO-TARGET ATTRIBUTE MAPPING GENERATOR (HYBRID)          ║
-║                                                                            ║
-║  Processing Strategy:                                                      ║
+║                                                                  
+          ║
+║  Processing Strategy:                                            
+          ║
 ║    - Phase 0: DML Optimization (LLM identifies required sections)         ║
-║    - Phase 1: Load graph data & build dependency tree                     ║
+║    - Phase 1: Load graph data & build dependency tree            
+         ║
 ║    - Phase 2: Extract detailed functional logic from subgraphs            ║
 ║    - Phase 2.5: Identify all output components (LLM-driven)               ║
 ║    - Phase 3: Process EACH output separately (one LLM call per output)    ║
-║    - Phase 4: Generate Excel with all outputs                             ║
+║    - Phase 4: Generate Excel with all outputs                    
+         ║
 ║  Flow: SOURCE → TARGET (trace forward from inputs to outputs)             ║
 ║  Output: Excel file with detailed attribute-level mapping + datatypes      ║
 ╚════════════════════════════════════════════════════════════════════════════╝
@@ -80,10 +62,10 @@ Output file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntel
 ================================================================================
 PHASE 1: LOAD GRAPH DATA & BUILD DEPENDENCY TREE
 ================================================================================
-📖 Loading graph data from: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_detailed_graph1_with_files.json
+📖 Loading graph data from: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1_with_files.json
 ✅ Loaded successfully!
 
-📊 Main Graph: 265_fileTransferToHadoopServer (ID: 1)
+📊 Main Graph: 265_fileTransferToHadoopServerAdhoc_remove (ID: 1)  
 📊 Total graphs in hierarchy: 1
 📊 Subgraphs to process: 0
    Processing order: []
@@ -93,7 +75,7 @@ PHASE 2: PROCESS SUBGRAPHS (BOTTOM-UP)
          Extract: detailed functional logic (inputs, transformations, outputs)
 ================================================================================
 
-💾 Saving subgraph logic to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_subgraph_logic_optimized.json
+💾 Saving subgraph logic to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_subgraph_logic_optimized.json 
 ✅ Saved successfully! File size: 0.00 KB
 
 ================================================================================
@@ -104,9 +86,10 @@ PHASE 3: PROCESS MAIN GRAPH (HYBRID OPTIMIZATION)
 ================================================================================
 
 ================================================================================
-🎯 Processing Main Graph 1: 265_fileTransferToHadoopServer
+🎯 Processing Main Graph 1: 265_fileTransferToHadoopServerAdhoc_remove
 ================================================================================
    ⏳ Waiting 60 seconds to avoid rate limit...
+  Stopping...
 
 ================================================================================
 📦 PHASE 0: CONTEXT-AWARE DML OPTIMIZATION
@@ -118,78 +101,32 @@ PHASE 3: PROCESS MAIN GRAPH (HYBRID OPTIMIZATION)
 🔍 PHASE 2.5: IDENTIFY OUTPUT COMPONENTS
 ================================================================================
    🤖 Asking LLM to identify all outputs...
+2025-11-19 18:55:43.822 | ERROR    | services.ai_script_analyzer:_create_chat_completion:80 - Error in _create_chat_completion: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-4 for gpt-4.1 in South Central US have exceeded the token rate limit for your current OpenAI S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-02-15-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}  
+2025-11-19 18:55:43.822 | ERROR    | services.ai_script_analyzer:analyze_with_context:610 - Error in analyze_with_context: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-4 for gpt-4.1 in South Central US have exceeded the token rate limit for your current OpenAI S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-02-15-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}       
    📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\identify_outputs_response.txt
-   📊 Response length: 153 characters
+   📊 Response length: 490 characters
    ✓ Attempting to parse entire response as JSON
-   ✅ Identified 1 output(s):
-      1. fvertex_32 (ID: 32)
+   ⚠️  JSON parse error: Expecting value: line 1 column 1 (char 0) 
+   📄 First 500 chars of response: I found some relevant information but couldn't generate a detailed analysis. Error: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-4 for gpt-4.1 in South Central US have exceeded the token rate limit for your current OpenAI S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-02-15-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}
+   ✓ Attempting to extract JSON from position 102 to 489
+   ⚠️  Failed to extract JSON: Expecting property name enclosed in  double quotes: line 1 column 2 (char 1)
+   ⚠️  Failed to identify outputs from LLM response
+   ⚠️  No outputs identified, cannot generate mappings
 
-================================================================================
-📋 PHASE 2.7: GENERATE MAIN GRAPH SUMMARY
-================================================================================
-   🤖 Calling GPT-5 LLM to generate graph summary...
-   📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\graph_summary_response.txt
-   📊 Response length: 1008 characters
-   ✓ Attempting to parse entire response as JSON
-   ✅ Graph summary generated successfully
-   ⏳ Waiting 60 seconds to avoid rate limit...
-
-================================================================================
-🔄 PHASE 3: GENERATE MAPPINGS FOR EACH OUTPUT
-================================================================================
-
-================================================================================
-📋 Processing Output 1/1: fvertex_32 (ID: 32)
-================================================================================
-   📝 Prompt saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\output_1_prompt.txt (Length: 113,387 chars)
-   🤖 Calling GPT-5 LLM for attribute mapping...
-   📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\output_1_response.txt
-   📊 Response length: 609 characters
-   ✓ Attempting to parse entire response as JSON
-   ✅ Generated 1 attribute mapping(s) for fvertex_32
-
-================================================================================
-✅ MAIN GRAPH PROCESSING COMPLETE
-   Total outputs processed: 1
-================================================================================
-
-💾 Saving final mapping to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_final_mapping_optimized.json
-✅ Saved successfully! File size: 1.88 KB
+💾 Saving final mapping to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_final_mapping_optimized.json   
+✅ Saved successfully! File size: 0.15 KB
 
 ================================================================================
 PHASE 4: GENERATE EXCEL OUTPUT
 ================================================================================
 
-📊 Generating Excel file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_source_to_target_mapping.xlsx
+📊 Generating Excel file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_source_to_target_mapping.xlsx    
    📄 Creating Summary sheet
-   📄 Creating sheet: fvertex_32
-   ✅ Added 1 mapping entries
-✅ Excel file saved! File size: 6.38 KB
+   ⚠️  No outputs found in mapping
+✅ Excel file saved! File size: 5.50 KB
 
 ================================================================================
 📋 EXECUTION SUMMARY
 ================================================================================
 Main Graph ID: 1
-Main Graph Name: 265_fileTransferToHadoopServer
-Subgraphs Processed: 0
-Output Files Generated:
-  - 265_fileTransferToHadoopServer_subgraph_logic_optimized.json   
-  - 265_fileTransferToHadoopServer_final_mapping_optimized.json    
-  - 265_fileTransferToHadoopServer_source_to_target_mapping.xlsx   
-All files saved in: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation
-================================================================================
-
-✅ STEP 3 COMPLETE!
-
-2025-11-19 18:13:38.406 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_run_step3:321 - Excel file generated: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_source_to_target_mapping.xlsx
-2025-11-19 18:13:38.406 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_run_step3:325 - Mapping JSON generated: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_final_mapping_optimized.json
-2025-11-19 18:13:38.406 | INFO     | __main__:index_all_repository_files_with_ai:1799 - 📋 Generated STTM: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServer_source_to_target_mapping.xlsx  
-2025-11-19 18:13:44.386 | WARNING  | __main__:index_all_repository_files_with_ai:1855 - ⚠️ Truncating RAW mp file content for 265_fileeTransferToHadoopServer.mp from 59410 to 50000 chars
-2025-11-19 18:13:44.386 | INFO     | __main__:index_all_repository_files_with_ai:1856 -    ℹ️  Note: PARSED components (vertices/flowss/ports) are FULLY embedded, only raw mp content truncated
-2025-11-19 18:13:44.386 | INFO     | __main__:index_all_repository_files_with_ai:1973 -    📦 Embedded in vector DB: 14 vertices, 5 flows, 38 ports
-2025-11-19 18:13:44.386 | INFO     | __main__:index_all_repository_files_with_ai:1974 -    📏 Document size: 58,400 chars (parsed components: 2,817 chars)
-2025-11-19 18:13:44.386 | DEBUG    | __main__:index_all_repository_files_with_ai:1994 - ✓ Created document for 265_fileTransferToHadoopServer.mp (total: 1)
-🔍 ENHANCED PARSING - EXTRACTING ALL COMPONENTS
-============================================================       
-   📊 Extracting graphs with fixed name parsing...
-      • Found 1 graphs with corrected names
+Main Graph Name: 265_fileTransferToHadoopServerAdhoc_remove      
