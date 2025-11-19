@@ -2484,8 +2484,6 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
         status_text.text(f"💾 Step 4/4: Indexing in vector database...")
         progress_bar.progress(75)
 
-        from services.document_generator import Document
-
         # Build document content with full details
         raw_content = parsed_result.get('raw_content', '')
         vertices = parsed_result.get('vertices', {})
@@ -2526,10 +2524,14 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
 
         final_content = ''.join(content_parts)
 
-        # Create document
-        doc = Document(
-            content=final_content,
-            metadata={
+        # Create document as dictionary (same format as index_all_repository_files_with_ai)
+        doc = {
+            "id": f"abinitio_{hash(str(graph_path))}",
+            "content": final_content,
+            "doc_type": "abinitio_script",
+            "system": "abinitio",
+            "title": f"Ab Initio Graph: {base_filename}",
+            "metadata": {
                 'file_name': graph_path.name,
                 'file_path': str(graph_path),
                 'system_type': 'abinitio',
@@ -2544,7 +2546,7 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
                 'parsed_json': str(parsed_json_path),
                 'raw_content_size': len(raw_content)
             }
-        )
+        }
 
         # Index in vector DB
         st.session_state.indexer.collections["abinitio_collection"].index_documents([doc])
