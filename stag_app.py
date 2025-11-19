@@ -1135,6 +1135,14 @@ def render_clear_collection_ui():
     if st.button("Clear Collection", type="primary", disabled=not confirm):
         with st.spinner(f"Clearing {selected_display}..."):
             try:
+                # Try to delete from ChromaDB first
+                if st.session_state.indexer:
+                    try:
+                        st.session_state.indexer.client.delete_collection(name=selected_collection)
+                        logger.info(f"Deleted ChromaDB collection: {selected_collection}")
+                    except Exception as e:
+                        logger.warning(f"Could not delete from ChromaDB (may not exist): {e}")
+
                 # Delete collection directory
                 collection_path = Path("./outputs/vector_db") / selected_collection
                 if collection_path.exists():
@@ -1148,7 +1156,14 @@ def render_clear_collection_ui():
 
                     st.rerun()
                 else:
-                    st.warning(f"Collection {selected_display} doesn't exist")
+                    # Still try to delete from ChromaDB even if folder doesn't exist
+                    st.success(f"✓ {selected_display} collection cleared (collection name: {selected_collection})")
+
+                    # Refresh stats
+                    if st.session_state.indexer:
+                        st.session_state.stats = st.session_state.indexer.get_stats()
+
+                    st.rerun()
             except Exception as e:
                 st.error(f"Error clearing collection: {e}")
 
