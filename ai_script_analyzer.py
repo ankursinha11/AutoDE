@@ -38,12 +38,47 @@ class AIScriptAnalyzer:
                 )
                 self.deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4")
                 self.enabled = True
-                logger.info("✓ AI Script Analyzer initialized with GPT-4")
+
+                # Detect if using GPT-5/o1/o3 models (use max_completion_tokens instead of max_tokens)
+                self.is_gpt5_or_reasoning = any(x in self.deployment_name.lower() for x in ['gpt-5', 'o1', 'o3', 'codex'])
+
+                if self.is_gpt5_or_reasoning:
+                    logger.info(f"✓ AI Script Analyzer initialized with {self.deployment_name} (reasoning model)")
+                else:
+                    logger.info(f"✓ AI Script Analyzer initialized with {self.deployment_name}")
             except Exception as e:
                 logger.warning(f"Could not initialize AI analyzer: {e}")
                 self.enabled = False
         else:
             logger.info("AI Script Analyzer disabled (no API key or OpenAI not available)")
+
+    def _create_chat_completion(self, messages: List[Dict], temperature: float = 0.3, max_tokens: int = 2000):
+        """
+        Create chat completion with correct parameters for GPT-4 vs GPT-5/o1/o3
+
+        GPT-5/o1/o3 models use 'max_completion_tokens' instead of 'max_tokens'
+        """
+        try:
+            if self.is_gpt5_or_reasoning:
+                # GPT-5/o1/o3: Use max_completion_tokens
+                response = self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_completion_tokens=max_tokens,
+                )
+            else:
+                # GPT-4 and earlier: Use max_tokens
+                response = self.client.chat.completions.create(
+                    model=self.deployment_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            return response
+        except Exception as e:
+            logger.error(f"Error in _create_chat_completion: {e}")
+            raise
 
     def analyze_script(self, script_logic: ScriptLogic) -> None:
         """
@@ -490,9 +525,8 @@ Analyze code and provide clear, accurate responses."""
             else:
                 max_tokens_limit = 2000  # Default
 
-            # Call GPT-4
-            response = self.client.chat.completions.create(
-                model=self.deployment_name,
+            # Call GPT with correct parameters
+            response = self._create_chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -556,8 +590,7 @@ Please provide a clear answer based on the context above."""
             else:
                 user_prompt = query
 
-            response = self.client.chat.completions.create(
-                model=self.deployment_name,
+            response = self._create_chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -586,8 +619,7 @@ Please provide a clear answer based on the context above."""
             return None
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment_name,
+            response = self._create_chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -644,8 +676,7 @@ Overall Outputs: {', '.join(workflow_flow.overall_outputs[:10])}
 Provide a 2-3 sentence business summary of what this workflow accomplishes and how data flows through it."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment_name,
+            response = self._create_chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -684,8 +715,7 @@ Provide JSON with:
 - recommendations: Architecture improvement suggestions"""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.deployment_name,
+            response = self._create_chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

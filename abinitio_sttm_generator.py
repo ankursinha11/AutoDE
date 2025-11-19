@@ -199,7 +199,14 @@ class AbInitioSTTMGenerator:
 
             # Wrap in "graph" key for step3 compatibility
             graph_details = {
-                "graph": graph_structure
+                "graph": graph_structure,
+                "extraction_metadata": {
+                    "total_graphs_processed": 1,
+                    "main_graph_id": "1",
+                    "main_graph_name": base_filename,
+                    "extraction_method": "simplified",
+                    "timestamp": str(Path(parsed_json_path).stat().st_mtime)
+                }
             }
 
             # Save output
