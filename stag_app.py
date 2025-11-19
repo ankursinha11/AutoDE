@@ -1136,36 +1136,45 @@ def render_clear_collection_ui():
         with st.spinner(f"Clearing {selected_display}..."):
             try:
                 # Try to delete from ChromaDB first
-                if st.session_state.indexer:
+                if st.session_state.indexer and hasattr(st.session_state.indexer, 'collections'):
                     try:
-                        st.session_state.indexer.client.delete_collection(name=selected_collection)
-                        logger.info(f"Deleted ChromaDB collection: {selected_collection}")
+                        # Get the collection's LocalSearchClient
+                        if selected_collection in st.session_state.indexer.collections:
+                            local_client = st.session_state.indexer.collections[selected_collection]
+                            if hasattr(local_client, 'client'):
+                                local_client.client.delete_collection(name=selected_collection)
+                                logger.info(f"✅ Deleted ChromaDB collection: {selected_collection}")
+                            else:
+                                logger.warning(f"LocalSearchClient for {selected_collection} has no client attribute")
+                        else:
+                            logger.warning(f"Collection {selected_collection} not found in indexer.collections")
                     except Exception as e:
                         logger.warning(f"Could not delete from ChromaDB (may not exist): {e}")
 
                 # Delete collection directory
                 collection_path = Path("./outputs/vector_db") / selected_collection
+                deleted_folder = False
                 if collection_path.exists():
                     import shutil
                     shutil.rmtree(collection_path)
+                    deleted_folder = True
+                    logger.info(f"✅ Deleted folder: {collection_path}")
+
+                # Show success message
+                if deleted_folder:
                     st.success(f"✓ {selected_display} collection cleared successfully!")
-
-                    # Refresh stats
-                    if st.session_state.indexer:
-                        st.session_state.stats = st.session_state.indexer.get_stats()
-
-                    st.rerun()
                 else:
-                    # Still try to delete from ChromaDB even if folder doesn't exist
                     st.success(f"✓ {selected_display} collection cleared (collection name: {selected_collection})")
 
-                    # Refresh stats
-                    if st.session_state.indexer:
-                        st.session_state.stats = st.session_state.indexer.get_stats()
+                # Refresh stats
+                if st.session_state.indexer:
+                    st.session_state.stats = st.session_state.indexer.get_stats()
 
-                    st.rerun()
+                st.rerun()
+
             except Exception as e:
                 st.error(f"Error clearing collection: {e}")
+                logger.error(f"Collection deletion error: {e}", exc_info=True)
 
 
 def render_clear_all_ui():
