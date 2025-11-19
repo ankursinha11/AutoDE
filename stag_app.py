@@ -1135,46 +1135,22 @@ def render_clear_collection_ui():
     if st.button("Clear Collection", type="primary", disabled=not confirm):
         with st.spinner(f"Clearing {selected_display}..."):
             try:
-                # Try to delete from ChromaDB first
-                if st.session_state.indexer and hasattr(st.session_state.indexer, 'collections'):
-                    try:
-                        # Get the collection's LocalSearchClient
-                        if selected_collection in st.session_state.indexer.collections:
-                            local_client = st.session_state.indexer.collections[selected_collection]
-                            if hasattr(local_client, 'client'):
-                                local_client.client.delete_collection(name=selected_collection)
-                                logger.info(f"✅ Deleted ChromaDB collection: {selected_collection}")
-                            else:
-                                logger.warning(f"LocalSearchClient for {selected_collection} has no client attribute")
-                        else:
-                            logger.warning(f"Collection {selected_collection} not found in indexer.collections")
-                    except Exception as e:
-                        logger.warning(f"Could not delete from ChromaDB (may not exist): {e}")
-
                 # Delete collection directory
                 collection_path = Path("./outputs/vector_db") / selected_collection
-                deleted_folder = False
                 if collection_path.exists():
                     import shutil
                     shutil.rmtree(collection_path)
-                    deleted_folder = True
-                    logger.info(f"✅ Deleted folder: {collection_path}")
-
-                # Show success message
-                if deleted_folder:
                     st.success(f"✓ {selected_display} collection cleared successfully!")
+
+                    # Refresh stats
+                    if st.session_state.indexer:
+                        st.session_state.stats = st.session_state.indexer.get_stats()
+
+                    st.rerun()
                 else:
-                    st.success(f"✓ {selected_display} collection cleared (collection name: {selected_collection})")
-
-                # Refresh stats
-                if st.session_state.indexer:
-                    st.session_state.stats = st.session_state.indexer.get_stats()
-
-                st.rerun()
-
+                    st.warning(f"Collection {selected_display} doesn't exist")
             except Exception as e:
                 st.error(f"Error clearing collection: {e}")
-                logger.error(f"Collection deletion error: {e}", exc_info=True)
 
 
 def render_clear_all_ui():
@@ -1215,28 +1191,61 @@ def render_reindex_abinitio_ui():
     """UI for re-indexing Ab Initio"""
     st.markdown("#### 🔄 Re-index Ab Initio")
 
-    st.info("Index Ab Initio .mp files with FAWN-enhanced parser")
+    st.info("Index Ab Initio .mp files with FAWN-enhanced parser + Full STTM generation")
 
-    # Option 1: Directory path
-    st.markdown("**Option 1: Index from Directory**")
-    directory_path = st.text_input("Ab Initio Directory Path", placeholder="/path/to/abinitio")
-
-    # Option 2: File upload
-    st.markdown("**Option 2: Upload Files**")
-    uploaded_files = st.file_uploader(
-        "Upload .mp files",
-        accept_multiple_files=True,
-        type=['mp'],
-        key="abinitio_upload"
+    # NEW: Index mode selection
+    index_mode = st.radio(
+        "Indexing Mode",
+        ["📂 Multiple Graphs (Directory)", "🎯 Single Priority Graph", "📤 Upload Files"],
+        help="Choose single graph for focused testing/demo, or multiple for full indexing"
     )
 
-    if st.button("Start Indexing", type="primary"):
-        if directory_path and Path(directory_path).exists():
-            reindex_abinitio_from_directory(directory_path)
-        elif uploaded_files:
-            reindex_abinitio_from_upload(uploaded_files)
-        else:
-            st.error("Please provide a directory path or upload files")
+    if index_mode == "🎯 Single Priority Graph":
+        st.markdown("**🎯 Index Single Priority Graph**")
+        st.caption("Perfect for testing, demos, or focused analysis with full STTM generation")
+
+        # Single graph file input
+        single_graph_path = st.text_input(
+            "Graph File Path",
+            placeholder="Input Files/blade/mp/1500_CDD_TUSourcedFamilyMemberLink.mp",
+            help="Full path to a single .mp file"
+        )
+
+        if st.button("Index Single Graph", type="primary"):
+            if single_graph_path and Path(single_graph_path).exists():
+                with st.spinner(f"🔄 Indexing single graph with full pipeline..."):
+                    st.info("📋 This will: Parse → Generate GraphFlow → Generate STTM → Index in Vector DB")
+                    reindex_single_abinitio_graph(single_graph_path)
+            else:
+                st.error(f"❌ File not found: {single_graph_path}")
+
+    elif index_mode == "📂 Multiple Graphs (Directory)":
+        # Option 1: Directory path
+        st.markdown("**📂 Index from Directory**")
+        st.caption("Indexes all .mp files in directory (uses filtered graph list)")
+        directory_path = st.text_input("Ab Initio Directory Path", placeholder="Input Files/blade/mp")
+
+        if st.button("Start Batch Indexing", type="primary"):
+            if directory_path and Path(directory_path).exists():
+                reindex_abinitio_from_directory(directory_path)
+            else:
+                st.error("Please provide a valid directory path")
+
+    else:  # Upload Files
+        # Option 2: File upload
+        st.markdown("**📤 Upload Files**")
+        uploaded_files = st.file_uploader(
+            "Upload .mp files",
+            accept_multiple_files=True,
+            type=['mp'],
+            key="abinitio_upload"
+        )
+
+        if st.button("Index Uploaded Files", type="primary"):
+            if uploaded_files:
+                reindex_abinitio_from_upload(uploaded_files)
+            else:
+                st.error("Please upload at least one .mp file")
 
 
 def render_reindex_autosys_ui():
@@ -2282,6 +2291,251 @@ def reindex_abinitio_from_directory(directory_path: str):
     except Exception as e:
         st.error(f"Error during deep indexing: {e}")
         logger.error(f"Ab Initio deep indexing error: {e}", exc_info=True)
+    finally:
+        progress_bar.empty()
+
+
+def reindex_single_abinitio_graph(graph_file_path: str):
+    """
+    Index a single Ab Initio graph with full pipeline:
+    Parse → GraphFlow → STTM → Vector DB
+
+    Perfect for focused testing, demos, or priority graphs with rate limit handling.
+    """
+    import time
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
+    try:
+        graph_path = Path(graph_file_path)
+        if not graph_path.exists():
+            st.error(f"❌ File not found: {graph_file_path}")
+            return
+
+        base_filename = graph_path.stem
+
+        # Initialize components
+        status_text.text("🔧 Initializing AI components...")
+        progress_bar.progress(5)
+
+        if 'ai_analyzer' not in st.session_state or st.session_state.ai_analyzer is None:
+            st.session_state.ai_analyzer = AIScriptAnalyzer()
+
+        if not st.session_state.ai_analyzer.enabled:
+            st.error("❌ AI Script Analyzer is disabled. Please configure Azure OpenAI credentials in .env")
+            return
+
+        # Get absolute path
+        import os
+        current_dir = Path(os.getcwd()).resolve()
+
+        # Create output folders
+        parsed_folder = (current_dir / "outputs" / "parsed_abinitio").resolve()
+        graphflow_folder = (current_dir / "outputs" / "graphflows").resolve()
+        sttm_folder = (current_dir / "outputs" / "sttm_automation").resolve()
+
+        parsed_folder.mkdir(parents=True, exist_ok=True)
+        graphflow_folder.mkdir(parents=True, exist_ok=True)
+        sttm_folder.mkdir(parents=True, exist_ok=True)
+
+        # STEP 1: Parse with Enhanced Parser
+        status_text.text(f"📋 Step 1/4: Parsing {base_filename} with enhanced parser (preserving raw_content)...")
+        progress_bar.progress(15)
+
+        from parsers.abinitio.enhanced_parser import EnhancedAbInitioParser
+        parser = EnhancedAbInitioParser()
+
+        parsed_result = parser.parse_mp_file(
+            file_path=str(graph_path),
+            output_folder=str(parsed_folder),
+            output_filename=f"{base_filename}_components.json"
+        )
+
+        parsed_json_path = parsed_folder / f"{base_filename}_components.json"
+
+        vertex_count = len(parsed_result.get('vertices', {}))
+        st.success(f"✅ Step 1 Complete: Parsed {vertex_count} vertices, {len(parsed_result.get('flows', {}))} flows")
+
+        # Warn if large graph
+        if vertex_count > 200:
+            st.warning(f"⚠️ Large graph with {vertex_count} vertices - may consume many tokens and hit rate limits")
+
+        # STEP 2: Generate GraphFlow Excel
+        status_text.text(f"📊 Step 2/4: Generating GraphFlow Excel visualization...")
+        progress_bar.progress(35)
+
+        from parsers.abinitio.graph_flow.excel_generator import GraphFlowExcelGenerator
+        graphflow_gen = GraphFlowExcelGenerator()
+
+        graphflow_result = graphflow_gen.generate_from_parsed_json(
+            parsed_json_path=str(parsed_json_path),
+            output_folder=str(graphflow_folder),
+            base_filename=base_filename
+        )
+
+        if graphflow_result['success']:
+            st.success(f"✅ Step 2 Complete: GraphFlow Excel → {graphflow_result['excel_file']}")
+        else:
+            st.warning(f"⚠️ Step 2 Failed: {graphflow_result.get('error')}")
+
+        # STEP 3: Generate STTM with retry handling
+        status_text.text(f"📋 Step 3/4: Generating STTM with enhanced pipeline (with rate limit retry)...")
+        progress_bar.progress(50)
+
+        from parsers.abinitio.automation.abinitio_sttm_generator import AbInitioSTTMGenerator
+
+        sttm_gen = AbInitioSTTMGenerator(
+            blade_path="Input Files/blade/dml",
+            output_folder=str(sttm_folder),
+            ai_analyzer=st.session_state.ai_analyzer
+        )
+
+        # Retry logic for rate limits
+        max_retries = 3
+        sttm_success = False
+
+        for attempt in range(max_retries):
+            try:
+                st.info(f"   Attempt {attempt + 1}/{max_retries}...")
+
+                sttm_result = sttm_gen.generate_sttm_from_parsed_json(
+                    parsed_json_path=str(parsed_json_path)
+                )
+
+                if sttm_result['success']:
+                    sttm_success = True
+                    st.success(f"✅ Step 3 Complete: STTM generated → {sttm_result.get('excel_file')}")
+
+                    # Check outputs
+                    if sttm_result.get('json_file') and Path(sttm_result['json_file']).exists():
+                        import json
+                        with open(sttm_result['json_file'], 'r') as f:
+                            sttm_data = json.load(f)
+                            outputs = sttm_data.get('outputs', [])
+                            if len(outputs) > 0:
+                                st.success(f"   🎯 Identified {len(outputs)} output(s)!")
+                            else:
+                                st.warning("   ⚠️ No outputs identified")
+                    break
+                else:
+                    st.error(f"❌ STTM generation failed: {sttm_result.get('error')}")
+                    break
+
+            except Exception as e:
+                error_str = str(e)
+
+                # Check for rate limit
+                if "429" in error_str or "RateLimitReached" in error_str:
+                    if attempt < max_retries - 1:
+                        wait_time = 60 * (2 ** attempt)  # 60s, 120s, 240s
+                        st.warning(f"   ⚠️ Rate limit hit! Waiting {wait_time}s before retry...")
+                        time.sleep(wait_time)
+                    else:
+                        st.error("   ❌ Rate limit exceeded after 3 retries. Try again later.")
+                        break
+                else:
+                    st.error(f"   ❌ Error: {e}")
+                    logger.error(f"STTM generation error: {e}", exc_info=True)
+                    break
+
+        # STEP 4: Index in Vector DB
+        status_text.text(f"💾 Step 4/4: Indexing in vector database...")
+        progress_bar.progress(75)
+
+        from services.document_generator import Document
+
+        # Build document content with full details
+        raw_content = parsed_result.get('raw_content', '')
+        vertices = parsed_result.get('vertices', {})
+        flows = parsed_result.get('flows', {})
+        ports = parsed_result.get('ports', {})
+
+        # Build comprehensive content
+        content_parts = [
+            f"# Ab Initio Graph: {base_filename}\n",
+            f"**File**: {graph_path.name}\n",
+            f"**Vertices**: {len(vertices)}, **Flows**: {len(flows)}, **Ports**: {len(ports)}\n\n"
+        ]
+
+        # Add vertex details
+        content_parts.append(f"## Vertices ({len(vertices)} total):\n")
+        for vid, vdata in list(vertices.items())[:50]:  # Limit to 50 for embedding size
+            vname = vdata.get('name', 'Unknown')
+            vtype = vdata.get('component_type', vdata.get('type', 'Unknown'))
+            content_parts.append(f"- **{vname}** (type: {vtype}, id: {vid})\n")
+
+        # Add flow details
+        content_parts.append(f"\n## Flows ({len(flows)} total):\n")
+        for fid, fdata in list(flows.items())[:30]:
+            fname = fdata.get('name', f'flow_{fid}')
+            content_parts.append(f"- {fname} (id: {fid})\n")
+
+        # Add metadata references
+        content_parts.append(f"\n## Generated Artifacts:\n")
+        content_parts.append(f"- **Parsed JSON**: {parsed_json_path}\n")
+        if graphflow_result.get('success'):
+            content_parts.append(f"- **GraphFlow Excel**: {graphflow_result['excel_file']}\n")
+        if sttm_success and sttm_result.get('excel_file'):
+            content_parts.append(f"- **STTM Excel**: {sttm_result['excel_file']}\n")
+
+        # Add truncated raw content
+        content_parts.append(f"\n## Raw Content (truncated):\n")
+        content_parts.append(raw_content[:10000])  # First 10K chars
+
+        final_content = ''.join(content_parts)
+
+        # Create document
+        doc = Document(
+            content=final_content,
+            metadata={
+                'file_name': graph_path.name,
+                'file_path': str(graph_path),
+                'system_type': 'abinitio',
+                'graph_name': base_filename,
+                'vertex_count': len(vertices),
+                'flow_count': len(flows),
+                'port_count': len(ports),
+                'has_graphflow': graphflow_result.get('success', False),
+                'has_sttm': sttm_success,
+                'graphflow_file': graphflow_result.get('excel_file', ''),
+                'sttm_file': sttm_result.get('excel_file', '') if sttm_success else '',
+                'parsed_json': str(parsed_json_path),
+                'raw_content_size': len(raw_content)
+            }
+        )
+
+        # Index in vector DB
+        st.session_state.indexer.collections["abinitio_collection"].index_documents([doc])
+
+        progress_bar.progress(100)
+        status_text.empty()
+
+        # Final success message
+        st.success("🎉 **Single Graph Indexing Complete!**")
+        st.info(f"""
+**Graph**: {base_filename}
+**Components**: {len(vertices)} vertices, {len(flows)} flows, {len(ports)} ports
+
+**Generated Files**:
+- 📄 Parsed JSON: `{parsed_json_path}`
+- 📊 GraphFlow Excel: `{graphflow_result.get('excel_file', 'N/A')}`
+- 📋 STTM Excel: `{sttm_result.get('excel_file', 'N/A') if sttm_success else 'N/A'}`
+
+**Vector DB**: ✅ Indexed in abinitio_collection
+
+**You can now**:
+- 💬 Ask questions about this graph in the chat
+- 📊 Generate STAG comparison documents
+- 🔍 Search for components and flows
+        """)
+
+        # Refresh stats
+        st.session_state.stats = st.session_state.indexer.get_stats()
+
+    except Exception as e:
+        st.error(f"❌ Error during single graph indexing: {e}")
+        logger.error(f"Single graph indexing error: {e}", exc_info=True)
     finally:
         progress_bar.empty()
 
