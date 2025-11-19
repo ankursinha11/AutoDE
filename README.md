@@ -1,132 +1,111 @@
+use_container_width=False`, use `width='content'`.
+🔍 ENHANCED PARSING - EXTRACTING ALL COMPONENTS
+============================================================
+   📊 Extracting graphs with fixed name parsing...
+      • Found 150 graphs with corrected names
+
+📊 FLOW TYPE ANALYSIS:
+   Total flows: 855
+   Flow connections: 1710
+   📋 FLOW TYPE DISTRIBUTION:
+      • PARAMETER_FLOW: 855
+   📋 CONFIG FLOWS IDENTIFIED: 855
+
+✅ ENHANCED PARSING COMPLETE:
+   📊 COMPONENT SUMMARY:
+      • Total Graphs: 150
+      • Total Vertices: 1295
+      • Total Flows: 855
+      • Total Ports: 6116
+      • Total Flow Connections: 1710
+      • Total Port Bindings: 728
+      • Total Config Flows: 855
+      • Total Graph Vertex Links: 1089
+      • Total Graph Flow Links: 855
+
+💾 Enhanced components saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\parsed_abinitio\1500_CDD_TUSourcedFamilyMemberLink_components.json
+2025-11-19 20:54:33.839 | INFO     | services.local_search.local_search_client:index_documents:105 - Indexing 1 documents...
+2025-11-19 20:54:33.841 | INFO     | services.local_search.local_search_client:index_documents:155 - Generating embeddings...
+Batches: 100%|███████████████| 1/1 [00:00<00:00, 13.66it/s] 
+2025-11-19 20:54:34.154 | INFO     | services.local_search.local_search_client:index_documents:262 - ✓ Indexed 1 documents successfully (upserted)
+2025-11-19 20:55:05.002 | INFO     | services.stag.stag_orchestrator:generate_comparison:92 - ================================================================================      
+2025-11-19 20:55:05.002 | INFO     | services.stag.stag_orchestrator:generate_comparison:93 - 🎯 STAG COMPARISON: ABINITIO → Databricks
+2025-11-19 20:55:05.002 | INFO     | services.stag.stag_orchestrator:generate_comparison:94 - Source Workflow: 1500_CDD_TUSourcedFamilyMemberLink
+2025-11-19 20:55:05.003 | INFO     | services.stag.stag_orchestrator:generate_comparison:95 - ================================================================================      
+2025-11-19 20:55:05.003 | INFO     | services.stag.stag_orchestrator:generate_comparison:111 -
+📋 Step 1: Looking up Databricks mapping...
+2025-11-19 20:55:05.004 | INFO     | services.stag.system_mapping_service:get_databricks_mapping:112 - ✅ Fuzzy match found: '1500_CDD_TUSourcedFamilyMemberLink' → '1500_CDD_TUSourcedFamilyMemberLink.pset' (similarity: 92.75%)
+2025-11-19 20:55:05.004 | INFO     | services.stag.stag_orchestrator:generate_comparison:141 -    ✅ Found mapping: 1500_CDD_TUSourcedFamilyMemberLink → ['pl_TUSourcedFamilyMemberLink']
+2025-11-19 20:55:05.004 | INFO     | services.stag.stag_orchestrator:generate_comparison:150 -
+📊 Step 2: Extracting abinitio logic...
+2025-11-19 20:55:05.004 | INFO     | services.stag.abinitio_logic_extractor:extract_logic:93 - 📊 Extracting logic for Ab Initio graph: 1500_CDD_TUSourcedFamilyMemberLink
+2025-11-19 20:55:05.059 | INFO     | services.stag.abinitio_logic_extractor:_search_graph_documents:253 -    Found 2 Ab Initio documents for 1500_CDD_TUSourcedFamilyMemberLink     
+2025-11-19 20:55:05.060 | WARNING  | services.stag.abinitio_logic_extractor:_get_parsed_json_path:274 -    Parsed JSON not found: 
+2025-11-19 20:55:05.886 | INFO     | services.stag.abinitio_logic_extractor:_extract_steps_with_ai:640 -    ✅ AI extracted 2 steps
+2025-11-19 20:55:05.887 | INFO     | services.stag.abinitio_logic_extractor:extract_logic:152 - ✅ Extracted 2 steps from Ab Initio graph: 1500_CDD_TUSourcedFamilyMemberLink       
+2025-11-19 20:55:05.887 | INFO     | services.stag.stag_orchestrator:generate_comparison:178 -
+📊 Step 3: Extracting Databricks logic...
+2025-11-19 20:55:05.887 | INFO     | services.stag.databricks_logic_extractor:extract_logic:66 - 📊 Extracting logic for Databricks pipeline: pl_TUSourcedFamilyMemberLink
+2025-11-19 20:55:05.948 | ERROR    | services.local_search.local_search_client:search:323 - Error searching: Error executing plan: Internal error: Error creating hnsw segment reader: Nothing found on disk
+2025-11-19 20:55:05.948 | INFO     | services.stag.databricks_logic_extractor:_search_pipeline_documents:122 -    Found 0 Databricks/ADF documents for pl_TUSourcedFamilyMemberLink 
+2025-11-19 20:55:05.948 | WARNING  | services.stag.databricks_logic_extractor:extract_logic:72 - No documents found for pipeline: pl_TUSourcedFamilyMemberLink
+2025-11-19 20:55:05.949 | WARNING  | services.stag.stag_orchestrator:generate_comparison:182 -    ⚠ No logic extracted for pl_TUSourcedFamilyMemberLink (may not be indexed)        
+2025-11-19 20:55:05.949 | INFO     | services.stag.stag_orchestrator:generate_comparison:185 -
+🤖 Step 4: Abstracting to business stages (AI)...
+2025-11-19 20:55:05.949 | INFO     | services.stag.business_stage_abstractor:abstract_to_business_stages:60 - 🤖 Abstracting technical logic to business stages using AI
+2025-11-19 20:55:05.950 | INFO     | services.stag.business_stage_abstractor:_generate_business_stages_with_rag:202 -    🤖 Sending RAG prompt to AI analyzer...
+2025-11-19 20:55:09.737 | INFO     | services.stag.business_stage_abstractor:_parse_ai_response_to_stages:370 -    ✅ Parsed 3 stages from AI response
+2025-11-19 20:55:09.737 | INFO     | services.stag.business_stage_abstractor:_validate_and_enrich_stages:427 -    ✅ Validated 3/3 stages
+2025-11-19 20:55:09.737 | INFO     | services.stag.business_stage_abstractor:abstract_to_business_stages:73 - ✅ Generated 3 business stages
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_orchestrator:generate_comparison:197 -    ✅ Generated 3 business stages (3 differences)
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_orchestrator:generate_comparison:200 -
+🔗 Step 5: Generating STTM (AI)...
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:generate_sttm:116 - 🔗 Generating STTM from abinitio to Databricks (using code-extracted schemas)
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:_extract_schema_from_code:206 -    📋 Extracting schema from CODE for abinitio
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:_extract_schema_from_code:259 -       ✅ Extracted 0 unique columns from 0 source files
+2025-11-19 20:55:09.737 | WARNING  | services.stag.stag_sttm_generator:_extract_schema_from_code:262 -       ⚠ No columns extracted from abinitio - column_schemas may be empty!    
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:_extract_schema_from_code:206 -    📋 Extracting schema from CODE for databricks
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:_extract_schema_from_code:259 -       ✅ Extracted 0 unique columns from 0 source files
+2025-11-19 20:55:09.737 | WARNING  | services.stag.stag_sttm_generator:_extract_schema_from_code:262 -       ⚠ No columns extracted from databricks - column_schemas may be empty!  
+2025-11-19 20:55:09.737 | WARNING  | services.stag.stag_sttm_generator:generate_sttm:142 -    ⚠ Code-extracted schemas incomplete: source=0 cols, target=0 cols
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:generate_sttm:150 -    📋 Source schema: 0 columns
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:generate_sttm:151 -    📋 Target schema: 0 columns
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:_generate_column_mappings_with_ai:553 -    🤖 Generating AI-based column mappings (grounded in extracted schemas)
+2025-11-19 20:55:09.737 | WARNING  | services.stag.stag_sttm_generator:_generate_column_mappings_with_ai:559 -       ⚠ No columns in either source or target schema!
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_sttm_generator:generate_sttm:166 - ✅ Generated 0 column mappings
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_orchestrator:generate_comparison:208 -    ✅ Generated 0 column mappings
+2025-11-19 20:55:09.737 | INFO     | services.stag.stag_orchestrator:generate_comparison:211 -
+📄 Step 6: Generating Excel comparison report...
+2025-11-19 20:55:09.737 | INFO     | services.stag.excel_generator:generate_comparison_excel:86 - 📊 Generating Excel comparison: 1500_CDD_TUSourcedFamilyMemberLink → pl_TUSourcedFamilyMemberLink
+2025-11-19 20:55:09.737 | INFO     | services.stag.excel_generator:generate_comparison_excel:96 -    Creating Overview sheet...
+2025-11-19 20:55:09.752 | INFO     | services.stag.excel_generator:generate_comparison_excel:99 -    Creating Databricks Logic sheet...
+2025-11-19 20:55:09.753 | INFO     | services.stag.excel_generator:generate_comparison_excel:102 -    Creating Abinitio Logic sheet...
+2025-11-19 20:55:09.754 | INFO     | services.stag.excel_generator:generate_comparison_excel:105 -    Creating Logic Comparison sheet...
+2025-11-19 20:55:09.755 | INFO     | services.stag.excel_generator:_build_logic_comparison:576 -    Comparing 2 abinitio items with 0 Databricks items
+2025-11-19 20:55:09.755 | INFO     | services.stag.excel_generator:_build_logic_comparison:615 -    ✅ Generated 2 comparison rows
+2025-11-19 20:55:09.756 | INFO     | services.stag.excel_generator:generate_comparison_excel:108 -    Creating STTM sheets (Source, Target, Comparison)...
+2025-11-19 20:55:09.757 | INFO     | services.stag.excel_generator:_create_databricks_sttm_section:1002 - Creating Databricks STTM section...
+2025-11-19 20:55:09.758 | INFO     | services.stag.excel_generator:_create_databricks_sttm_section:1082 -    Databricks STTM section: 1 column rows
+2025-11-19 20:55:09.758 | INFO     | services.stag.excel_generator:_create_source_sttm_section:1098 - Creating abinitio STTM section...
+2025-11-19 20:55:09.760 | INFO     | services.stag.excel_generator:_create_source_sttm_section:1177 -    abinitio STTM section: 1 column rows
+2025-11-19 20:55:09.760 | INFO     | services.stag.excel_generator:_create_sttm_comparison_section:1198 - Creating STTM Comparison section...
+2025-11-19 20:55:09.761 | INFO     | services.stag.excel_generator:_create_sttm_comparison_section:1250 -    Comparison section: 0 comparison rows
+2025-11-19 20:55:09.886 | INFO     | services.stag.excel_generator:generate_comparison_excel:126 - ✅ Excel file saved: outputs/stag_comparisons\1500_CDD_TUSourcedFamilyMemberLink_vs_pl_TUSourcedFamilyMemberLink_20251119_205509.xlsx        
+2025-11-19 20:55:09.887 | INFO     | services.stag.stag_orchestrator:generate_comparison:227 -    ✅ Excel file generated: outputs/stag_comparisons\1500_CDD_TUSourcedFamilyMemberLink_vs_pl_TUSourcedFamilyMemberLink_20251119_205509.xlsx     
+2025-11-19 20:55:09.887 | INFO     | services.stag.stag_orchestrator:generate_comparison:241 -
 ================================================================================
-STEP 2: EMBED DML/XFR FILES (HIERARCHICAL PROCESSING)
-================================================================================
-
-📖 Loading: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1.json
-✅ Loaded successfully!
-
-🔄 Starting hierarchical processing (deepest level first)...       
-
-
-============================================================       
-📊 Graph 1: 265_fileTransferToHadoopServerAdhoc_remove (Level 0)   
-============================================================       
-
-🔄 Processing Graph 1...
-   Vertices: 427
-   🤖 Calling GPT-5 to extract files from Graph 1...
-❌ Error invoking GPT-5: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-5 for gpt-5 in East US 2 have exceeded the token rate limit for your current AIServices S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-12-01-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}
-   ❌ Error extracting files: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-5 for gpt-5 in East US 2 have exceeded the token rate limit for your current AIServices S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-12-01-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}
-   ➖ No .dml/.xfr files referenced
-
-✅ Graph 1 processing complete!
-
-================================================================================
-💾 Saving to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1_with_files.json
-✅ Saved successfully! File size: 2330.66 KB
-
-================================================================================
-📊 SUMMARY
-================================================================================
-Total file references embedded: 0
-Output file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1_with_files.json
-================================================================================
-
-✅ STEP 2 COMPLETE!
-
-2025-11-19 18:51:43.243 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_run_step2:271 - Step 2 complete: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1_with_files.json
-2025-11-19 18:51:43.243 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:generate_sttm_from_parsed_json:110 - Step 3: Generating STTM mapping with GPT-5...
-🔧 Using STAG's AI analyzer for STTM generation...
-✅ AI analyzer initialized
-
-
-╔════════════════════════════════════════════════════════════════════════════╗
-║    STEP 3: SOURCE-TO-TARGET ATTRIBUTE MAPPING GENERATOR (HYBRID)          ║
-║                                                                  
-          ║
-║  Processing Strategy:                                            
-          ║
-║    - Phase 0: DML Optimization (LLM identifies required sections)         ║
-║    - Phase 1: Load graph data & build dependency tree            
-         ║
-║    - Phase 2: Extract detailed functional logic from subgraphs            ║
-║    - Phase 2.5: Identify all output components (LLM-driven)               ║
-║    - Phase 3: Process EACH output separately (one LLM call per output)    ║
-║    - Phase 4: Generate Excel with all outputs                    
-         ║
-║  Flow: SOURCE → TARGET (trace forward from inputs to outputs)             ║
-║  Output: Excel file with detailed attribute-level mapping + datatypes      ║
-╚════════════════════════════════════════════════════════════════════════════╝
-
-
-================================================================================
-PHASE 1: LOAD GRAPH DATA & BUILD DEPENDENCY TREE
-================================================================================
-📖 Loading graph data from: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_detailed_graph1_with_files.json
-✅ Loaded successfully!
-
-📊 Main Graph: 265_fileTransferToHadoopServerAdhoc_remove (ID: 1)  
-📊 Total graphs in hierarchy: 1
-📊 Subgraphs to process: 0
-   Processing order: []
-
-================================================================================
-PHASE 2: PROCESS SUBGRAPHS (BOTTOM-UP)
-         Extract: detailed functional logic (inputs, transformations, outputs)
-================================================================================
-
-💾 Saving subgraph logic to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_subgraph_logic_optimized.json 
-✅ Saved successfully! File size: 0.00 KB
-
-================================================================================
-PHASE 3: PROCESS MAIN GRAPH (HYBRID OPTIMIZATION)
-         - DML reduction to required sections only
-         - Identify all outputs dynamically
-         - Generate mapping for each output separately
-================================================================================
-
-================================================================================
-🎯 Processing Main Graph 1: 265_fileTransferToHadoopServerAdhoc_remove
-================================================================================
-   ⏳ Waiting 60 seconds to avoid rate limit...
-  Stopping...
-
-================================================================================
-📦 PHASE 0: CONTEXT-AWARE DML OPTIMIZATION
-================================================================================
-   ℹ️  No referenced files to optimize
-   ⏳ Waiting 60 seconds to avoid rate limit...
-
-================================================================================
-🔍 PHASE 2.5: IDENTIFY OUTPUT COMPONENTS
-================================================================================
-   🤖 Asking LLM to identify all outputs...
-2025-11-19 18:55:43.822 | ERROR    | services.ai_script_analyzer:_create_chat_completion:80 - Error in _create_chat_completion: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-4 for gpt-4.1 in South Central US have exceeded the token rate limit for your current OpenAI S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-02-15-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}  
-2025-11-19 18:55:43.822 | ERROR    | services.ai_script_analyzer:analyze_with_context:610 - Error in analyze_with_context: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-4 for gpt-4.1 in South Central US have exceeded the token rate limit for your current OpenAI S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-02-15-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}       
-   📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\identify_outputs_response.txt
-   📊 Response length: 490 characters
-   ✓ Attempting to parse entire response as JSON
-   ⚠️  JSON parse error: Expecting value: line 1 column 1 (char 0) 
-   📄 First 500 chars of response: I found some relevant information but couldn't generate a detailed analysis. Error: Error code: 429 - {'error': {'code': 'RateLimitReached', 'message': 'Your requests to gpt-4 for gpt-4.1 in South Central US have exceeded the token rate limit for your current OpenAI S0 pricing tier. This request was for ChatCompletions_Create under Azure OpenAI API version 2024-02-15-preview. Please retry after 60 seconds. To increase your default rate limit, visit: https://aka.ms/oai/quotaincrease.'}}
-   ✓ Attempting to extract JSON from position 102 to 489
-   ⚠️  Failed to extract JSON: Expecting property name enclosed in  double quotes: line 1 column 2 (char 1)
-   ⚠️  Failed to identify outputs from LLM response
-   ⚠️  No outputs identified, cannot generate mappings
-
-💾 Saving final mapping to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_final_mapping_optimized.json   
-✅ Saved successfully! File size: 0.15 KB
-
-================================================================================
-PHASE 4: GENERATE EXCEL OUTPUT
-================================================================================
-
-📊 Generating Excel file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\265_fileTransferToHadoopServerAdhoc_remove_source_to_target_mapping.xlsx    
-   📄 Creating Summary sheet
-   ⚠️  No outputs found in mapping
-✅ Excel file saved! File size: 5.50 KB
-
-================================================================================
-📋 EXECUTION SUMMARY
-================================================================================
-Main Graph ID: 1
-Main Graph Name: 265_fileTransferToHadoopServerAdhoc_remove      
+2025-11-19 20:55:09.887 | INFO     | services.stag.stag_orchestrator:generate_comparison:242 - ✅ STAG COMPARISON COMPLETE
+2025-11-19 20:55:09.888 | INFO     | services.stag.stag_orchestrator:generate_comparison:243 - ================================================================================     
+2025-11-19 20:55:09.888 | INFO     | services.stag.stag_orchestrator:generate_comparison:244 - Source: abinitio: 1500_CDD_TUSourcedFamilyMemberLink
+2025-11-19 20:55:09.888 | INFO     | services.stag.stag_orchestrator:generate_comparison:245 - Databricks Pipelines Processed: 1
+2025-11-19 20:55:09.888 | INFO     | services.stag.stag_orchestrator:generate_comparison:247 -   1. pl_TUSourcedFamilyMemberLink
+2025-11-19 20:55:09.888 | INFO     | services.stag.stag_orchestrator:generate_comparison:248 -      - Business Stages: 3
+2025-11-19 20:55:09.889 | INFO     | services.stag.stag_orchestrator:generate_comparison:249 -      - STTM Mappings: 0  
+2025-11-19 20:55:09.889 | INFO     | services.stag.stag_orchestrator:generate_comparison:250 -      - Differences: 3    
+2025-11-19 20:55:09.889 | INFO     | services.stag.stag_orchestrator:generate_comparison:251 -      - Excel: outputs/stag_comparisons\1500_CDD_TUSourcedFamilyMemberLink_vs_pl_TUSourcedFamilyMemberLink_20251119_205509.xlsx
+2025-11-19 20:55:09.889 | INFO     | services.stag.stag_orchestrator:generate_comparison:252 -
+Totals Across All Pipelines:
+2025-11-19 20:55:09.889 | INFO     | services.stag.stag_orchestrator:generate_comparison:253 -   - Business Stages: 3   
+2025-11-19 20:55:09.890 | INFO     | services.stag.stag_orchestrator:generate_comparison:254 -   - STTM Mappings: 0     
+2025-11-19 20:55:09.890 | INFO     | services.stag.stag_orchestrator:generate_comparison:255 -   - Differences: 3       
+2025-11-19 20:55:09.890 | INFO     | services.stag.stag_orchestrator:generate_comparison:256 - ================================================================================  
