@@ -32,6 +32,7 @@ from services.document_generator import DocumentGenerator
 from services.document_analyzer import DocumentAnalyzer
 from services.stag_workflow_integration import STAGWorkflowIntelligence
 from services.stag import STAGOrchestrator
+from services.stag.abinitio_databricks_fast_comparison import AbInitioDatabricksComparison
 
 
 class UpdateType(Enum):
@@ -108,10 +109,13 @@ class ChatOrchestrator:
         # Initialize STAG orchestrator for comprehensive comparisons
         self.stag_orchestrator = STAGOrchestrator(indexer=indexer, ai_analyzer=ai_analyzer)
 
+        # Initialize fast Ab Initio ↔ Databricks comparison service
+        self.abinitio_databricks_comparator = AbInitioDatabricksComparison(indexer=indexer, ai_analyzer=ai_analyzer)
+
         # Context for pending user selections
         self.pending_selection = None  # Stores context when waiting for user choice
 
-        logger.info("ChatOrchestrator initialized with 5 specialized agents + LogicComparator + Codebase Copilot + Document Tools + STAG Orchestrator")
+        logger.info("ChatOrchestrator initialized with 5 specialized agents + LogicComparator + Codebase Copilot + Document Tools + STAG Orchestrator + Fast Ab Initio Comparison")
 
     def _read_actual_file_content(self, result: Dict[str, Any]) -> Optional[str]:
         """
@@ -325,10 +329,10 @@ class ChatOrchestrator:
                 data={"results_count": len(all_results), "collections": len(search_results)}
             )
 
-            # Task 2: Read actual files and extract deep context
+            # Task 2: Extract context (prioritize indexed content to avoid reading massive files)
             yield StreamUpdate(
                 type=UpdateType.TASK_START,
-                content="Task 2/3: Reading actual script files for deep analysis..."
+                content="Task 2/3: Extracting context from indexed documents..."
             )
 
             context_chunks = []
@@ -337,45 +341,75 @@ class ChatOrchestrator:
 
             for result in all_results[:5]:  # Limit to top 5 overall
                 if isinstance(result, dict):
-                    # Try to read actual file first
-                    actual_content = self._read_actual_file_content(result)
+                    # PRIORITY 1: Use indexed content first (already in vector DB)
+                    content = result.get('content', '')
+                    metadata = result.get('metadata', {})
+                    file_name = metadata.get('file_name', metadata.get('file_path', 'Unknown'))
+                    file_path = metadata.get('absolute_file_path', metadata.get('file_path', ''))
 
-                    if actual_content:
-                        # Use full file content
-                        context_chunks.append(actual_content)
-                        files_read += 1
-
-                        # Track source file name
-                        metadata = result.get('metadata', {})
-                        file_name = metadata.get('file_name', metadata.get('file_path', 'Unknown'))
+                    if content and len(content) > 200:  # Good indexed content
+                        context_chunks.append(content)
                         source_files.append({
                             'source': file_name,
-                            'file_path': metadata.get('absolute_file_path', metadata.get('file_path', '')),
+                            'file_path': file_path,
                             'system': metadata.get('system', 'Unknown')
                         })
-
                         yield StreamUpdate(
                             type=UpdateType.TASK_PROGRESS,
-                            content=f"Read actual file: {file_name}"
+                            content=f"Using indexed content: {file_name}"
                         )
-                    else:
-                        # Fallback to indexed content
-                        content = result.get('content', '')
-                        if content:
-                            context_chunks.append(content)
+                        continue
 
-                            # Track source
-                            metadata = result.get('metadata', {})
-                            file_name = metadata.get('file_name', metadata.get('file_path', 'Unknown'))
+                    # PRIORITY 2: Only read actual file if indexed content is insufficient AND file is reasonably sized
+                    actual_file_path = Path(file_path) if file_path else None
+
+                    if actual_file_path and actual_file_path.exists():
+                        file_size = actual_file_path.stat().st_size
+
+                        # CRITICAL: Don't read massive files (>1MB) that would cause rate limits
+                        if file_size > 1_000_000:  # 1MB limit
+                            logger.warning(f"Skipping large file ({file_size:,} bytes): {file_name}")
+                            yield StreamUpdate(
+                                type=UpdateType.TASK_PROGRESS,
+                                content=f"⚠️ Skipped large file ({file_size//1024}KB): {file_name} - using indexed content only"
+                            )
+                            # Still use whatever indexed content we have
+                            if content:
+                                context_chunks.append(content)
+                                source_files.append({
+                                    'source': file_name,
+                                    'file_path': file_path,
+                                    'system': metadata.get('system', 'Unknown')
+                                })
+                            continue
+
+                        # Read small files only
+                        actual_content = self._read_actual_file_content(result)
+                        if actual_content:
+                            context_chunks.append(actual_content)
+                            files_read += 1
                             source_files.append({
                                 'source': file_name,
-                                'file_path': metadata.get('file_path', ''),
+                                'file_path': file_path,
+                                'system': metadata.get('system', 'Unknown')
+                            })
+                            yield StreamUpdate(
+                                type=UpdateType.TASK_PROGRESS,
+                                content=f"Read small file ({file_size//1024}KB): {file_name}"
+                            )
+                    else:
+                        # No file access, use indexed content
+                        if content:
+                            context_chunks.append(content)
+                            source_files.append({
+                                'source': file_name,
+                                'file_path': file_path,
                                 'system': metadata.get('system', 'Unknown')
                             })
 
             yield StreamUpdate(
                 type=UpdateType.TASK_COMPLETE,
-                content=f"Read {files_read} actual files, extracted {len(context_chunks)} total sources"
+                content=f"Extracted {len(context_chunks)} sources ({files_read} from disk, {len(context_chunks)-files_read} from index)"
             )
 
             # Task 3: Generate answer using AI with full file content
@@ -2065,10 +2099,28 @@ The comprehensive Excel workbook contains **5 detailed sheets**:
         """
         Handle STAG comparison query - Generate comprehensive Excel comparison report
 
-        Supports multi-intent:
-        - If query also asks for explanation, includes detailed business stage analysis in response
-        - If query specifies specific aspects to focus on, tailors output accordingly
+        Supports:
+        - Fast Ab Initio ↔ Databricks comparison (for large graphs 200+ components)
+        - Standard STAG comparison (Hadoop/Ab Initio → Databricks with full AI analysis)
+
+        Routing:
+        - If Ab Initio + Databricks systems detected → Use fast comparison
+        - Otherwise → Use standard STAG comparison
         """
+
+        # Check if this is Ab Initio ↔ Databricks comparison
+        is_abinitio_databricks = (
+            'abinitio' in [s.lower() for s in classified.systems] and
+            'databricks' in [s.lower() for s in classified.systems]
+        )
+
+        if is_abinitio_databricks:
+            yield StreamUpdate(
+                type=UpdateType.THINKING,
+                content="🚀 Detected Ab Initio ↔ Databricks comparison - Using FAST comparison engine for large graphs..."
+            )
+            yield from self._handle_abinitio_databricks_fast_comparison(query, classified, context)
+            return
 
         yield StreamUpdate(
             type=UpdateType.THINKING,
@@ -2194,6 +2246,234 @@ If you cannot determine the workflow, set confidence to 0.0.
             yield StreamUpdate(
                 type=UpdateType.ERROR,
                 content=f"❌ Error during STAG comparison: {str(e)}"
+            )
+
+
+    def _handle_abinitio_databricks_fast_comparison(
+        self,
+        query: str,
+        classified,
+        context: Optional[Dict]
+    ) -> Generator[StreamUpdate, None, None]:
+        """
+        Handle Ab Initio ↔ Databricks fast comparison using VM_FAWN Excel directly
+
+        Optimized for large graphs (200-1214+ components):
+        - Reads VM_FAWN Excel (already has all transformation data)
+        - Batched AI matching by transform type (not per-component)
+        - Generates Excel with RED highlighting for unmatched Ab Initio logic
+        - Completes in minutes instead of hours (20-30 API calls vs 1000+)
+        """
+
+        # Extract Ab Initio graph name from query
+        yield StreamUpdate(
+            type=UpdateType.TASK_START,
+            content="Task 1/4: Extracting Ab Initio graph name..."
+        )
+
+        # Use classified entities to get graph name
+        graph_name = None
+        for entity in classified.entities:
+            # Check if entity looks like a graph name (contains numbers and underscores)
+            if '_' in entity and any(c.isdigit() for c in entity):
+                graph_name = entity
+                break
+
+        # Fallback: Use AI to extract graph name
+        if not graph_name:
+            extraction_prompt = f"""Extract the Ab Initio graph name from this query:
+
+Query: "{query}"
+
+Detected entities: {', '.join(classified.entities) if classified.entities else 'None'}
+
+Return ONLY the graph name (e.g., "1500_CDD_TUSourcedFamilyMemberLink"), nothing else.
+If you cannot find it, return "NONE"."""
+
+            try:
+                response = self.ai_analyzer.analyze_code(
+                    code=extraction_prompt,
+                    context="",
+                    analysis_type="graph_extraction"
+                )
+                graph_name = response.strip()
+                if graph_name == "NONE":
+                    graph_name = None
+            except Exception as e:
+                logger.error(f"AI extraction failed: {e}")
+
+        if not graph_name:
+            yield StreamUpdate(
+                type=UpdateType.ERROR,
+                content="❌ Could not identify Ab Initio graph name from query. Please specify the graph name explicitly (e.g., '1500_CDD_TUSourcedFamilyMemberLink')."
+            )
+            return
+
+        yield StreamUpdate(
+            type=UpdateType.TASK_COMPLETE,
+            content=f"✅ Identified Ab Initio graph: {graph_name}"
+        )
+
+        # Run fast comparison
+        yield StreamUpdate(
+            type=UpdateType.TASK_START,
+            content="Task 2/4: Finding VM_FAWN Excel and Databricks data..."
+        )
+
+        try:
+            result = self.abinitio_databricks_comparator.generate_comparison(
+                abinitio_graph_name=graph_name,
+                output_folder="outputs/stag_comparisons/abinitio_databricks"
+            )
+
+            if not result['success']:
+                error_msg = ', '.join(result['errors']) if result['errors'] else 'Unknown error'
+                yield StreamUpdate(
+                    type=UpdateType.ERROR,
+                    content=f"❌ Fast comparison failed: {error_msg}"
+                )
+                return
+
+            yield StreamUpdate(
+                type=UpdateType.TASK_COMPLETE,
+                content=f"✅ Found VM_FAWN Excel and Databricks pipeline: {result['databricks_pipeline']}"
+            )
+
+            # Progress updates
+            yield StreamUpdate(
+                type=UpdateType.TASK_START,
+                content="Task 3/4: Running fast comparison (batched AI matching by transform type)..."
+            )
+
+            yield StreamUpdate(
+                type=UpdateType.TASK_PROGRESS,
+                content=f"📊 Ab Initio components: {result['abinitio_components']}"
+            )
+
+            yield StreamUpdate(
+                type=UpdateType.TASK_PROGRESS,
+                content=f"📊 Databricks transformations: {result['databricks_transformations']}"
+            )
+
+            yield StreamUpdate(
+                type=UpdateType.TASK_COMPLETE,
+                content=f"✅ Comparison complete: {result['matched']} matched, {result['unmatched']} unmatched"
+            )
+
+            # Generate final answer
+            yield StreamUpdate(
+                type=UpdateType.TASK_START,
+                content="Task 4/4: Formatting comparison report..."
+            )
+
+            # Normalize path for display
+            display_path = result['excel_file'].replace('\\', '/')
+            import os
+            filename = os.path.basename(result['excel_file'])
+
+            answer = f"""## 📊 Ab Initio ↔ Databricks Comparison Report
+
+**Ab Initio Graph:** `{graph_name}`
+**Databricks Pipeline:** `{result['databricks_pipeline']}`
+
+---
+
+### 📥 Download Excel Report
+
+**File:** [{filename}]({display_path})
+**Location:** `{display_path}`
+
+---
+
+### 📈 Analysis Summary
+
+| Metric | Count | Percentage |
+|--------|-------|------------|
+| **Total Ab Initio Components** | {result['abinitio_components']} | 100% |
+| **✅ Matched in Databricks** | {result['matched']} | {result['match_rate']:.1f}% |
+| **🔴 Unmatched (RED in Excel)** | {result['unmatched']} | {100 - result['match_rate']:.1f}% |
+| **Databricks Transformations** | {result['databricks_transformations']} | - |
+
+---
+
+### 🔍 What's in the Excel Report?
+
+The comparison Excel contains:
+
+1. **Ab Initio Component Column:**
+   - Component name, type, transform rules from VM_FAWN
+
+2. **Databricks Match Column:**
+   - Matching Databricks transformation (if found)
+   - Match confidence score
+
+3. **Status Column:**
+   - ✅ "Matched" = Similar logic found in Databricks
+   - 🔴 "UNMATCHED" = No equivalent found (highlighted in RED)
+
+4. **Color Coding:**
+   - 🟢 **Green rows** = Ab Initio logic matched in Databricks
+   - 🔴 **RED rows** = Ab Initio logic NOT found in Databricks (migration gap!)
+
+---
+
+### ⚠️ Migration Gaps (Unmatched Logic)
+
+**{result['unmatched']} Ab Initio components** ({100 - result['match_rate']:.1f}%) have **NO matching logic** in Databricks.
+
+**Next Steps:**
+1. Open Excel and filter for RED rows (Status = "UNMATCHED")
+2. Review each unmatched component's transform rule
+3. Determine if logic needs to be:
+   - Implemented in Databricks (migration gap)
+   - Deprecated (no longer needed)
+   - Already implemented differently (manual verification needed)
+
+---
+
+### 🚀 Performance Note
+
+This comparison used the **Fast Comparison Engine**:
+- ✅ Completed in minutes (not hours!)
+- ✅ Analyzed {result['abinitio_components']} components using batched AI matching
+- ✅ Grouped by transform type (~20-30 API calls instead of {result['abinitio_components']}+)
+- ✅ Works for large graphs (200-1200+ components)
+
+---
+
+### 💡 Tips for Review
+
+**Focus on RED (unmatched) rows first:**
+- These are potential migration gaps or business logic differences
+- Verify each one to ensure no data logic is missing in Databricks
+
+**Green (matched) rows:**
+- Similar logic found, but still review for implementation differences
+- Check match confidence scores (lower confidence = more manual verification needed)
+"""
+
+            yield StreamUpdate(
+                type=UpdateType.FINAL_ANSWER,
+                content=answer,
+                data={
+                    'excel_file': result['excel_file'],
+                    'graph_name': graph_name,
+                    'databricks_pipeline': result['databricks_pipeline'],
+                    'abinitio_components': result['abinitio_components'],
+                    'matched': result['matched'],
+                    'unmatched': result['unmatched'],
+                    'match_rate': result['match_rate']
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Error in Ab Initio ↔ Databricks fast comparison: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+
+            yield StreamUpdate(
+                type=UpdateType.ERROR,
+                content=f"❌ Error during fast comparison: {str(e)}"
             )
 
 
