@@ -136,7 +136,10 @@ class AbInitioDatabricksComparison:
 
             output_path = Path(output_folder)
             output_path.mkdir(parents=True, exist_ok=True)
-            output_excel = output_path / f"{abinitio_graph_name}_vs_{databricks_pipeline.replace('/', '_')}_comparison.xlsx"
+
+            # Extract just the pipeline base name for the filename
+            pipeline_base = Path(databricks_pipeline).stem  # e.g., "pl_TUSourcedFamilyMemberLink"
+            output_excel = output_path / f"{abinitio_graph_name}_vs_{pipeline_base}_comparison.xlsx"
 
             comparison_result = self.fast_comparator.generate_abinitio_databricks_comparison(
                 abinitio_vm_fawn_excel=str(vm_fawn_excel),
