@@ -35,7 +35,7 @@ class STAGOrchestrator:
         self,
         indexer=None,
         ai_analyzer=None,
-        system_mapping_file: str = "Input Files/system_mapping_layer.json"
+        system_mapping_file: str = "Input_Files/system_mapping_layer.json"
     ):
         """
         Initialize STAG Orchestrator
@@ -116,18 +116,7 @@ class STAGOrchestrator:
                     logger.warning(f"   ⚠ No pre-defined mapping found for {source_system}: {source_workflow}")
                     logger.info(f"   🤖 Using AI to find similar Databricks workflow...")
 
-                    search_result = self._intelligent_workflow_search(source_system, source_workflow)
-
-                    # Check if multiple matches returned (dict response)
-                    if isinstance(search_result, dict) and search_result.get('status') == 'multiple_matches':
-                        # Return result with multiple_matches status for user selection
-                        result['status'] = 'multiple_matches'
-                        result['matches'] = search_result['matches']
-                        result['success'] = False  # Not yet successful - needs user selection
-                        logger.info(f"   🔍 Multiple matches found - user selection required")
-                        return result
-
-                    databricks_pipeline = search_result
+                    databricks_pipeline = self._intelligent_workflow_search(source_system, source_workflow)
 
                     if not databricks_pipeline:
                         error_msg = f"No Databricks mapping found for {source_system}: {source_workflow} (tried mapping file and intelligent search)"
@@ -138,15 +127,30 @@ class STAGOrchestrator:
                     logger.info(f"   ✅ AI found similar workflow: {source_workflow} → {databricks_pipeline}")
                 else:
                     databricks_pipelines = mapping['databricks_pipelines']
-                    logger.info(f"   ✅ Found mapping: {source_workflow} → {databricks_pipelines}")
 
+                    # CRITICAL FIX: If multiple Databricks pipelines found, ask user to select
                     if len(databricks_pipelines) > 1:
-                        logger.info(f"   📌 Multiple Databricks pipelines found ({len(databricks_pipelines)}), will process all of them")
+                        logger.info(f"   ℹ️ Multiple Databricks pipelines found ({len(databricks_pipelines)}), asking user to select...")
+
+                        # Return special status for user selection UI
+                        return {
+                            'success': False,
+                            'status': 'multiple_matches',
+                            'source_workflow': source_workflow,
+                            'source_system': source_system,
+                            'matches': [{'name': pipeline, 'confidence': 1.0} for pipeline in databricks_pipelines],
+                            'message': f"Found {len(databricks_pipelines)} Databricks pipelines for {source_workflow}. Please select which pipeline(s) to compare.",
+                            'errors': []
+                        }
+
+                    databricks_pipeline = databricks_pipelines[0]  # Take first pipeline
+                    logger.info(f"   ✅ Found mapping: {source_workflow} → {databricks_pipeline}")
             else:
                 logger.info(f"   ℹ Using provided Databricks pipeline: {databricks_pipeline}")
-                databricks_pipelines = [databricks_pipeline]  # Wrap single pipeline in list
 
-            # Step 2: Extract source logic (once for all pipelines)
+            result['databricks_pipeline'] = databricks_pipeline
+
+            # Step 2: Extract source logic
             logger.info(f"\n📊 Step 2: Extracting {source_system} logic...")
             if source_system.lower() == 'hadoop':
                 source_logic = self.hadoop_extractor.extract_logic(source_workflow)
@@ -161,98 +165,63 @@ class STAGOrchestrator:
             if not source_logic or source_logic.get('total_jobs', 0) == 0 and source_logic.get('total_steps', 0) == 0:
                 logger.warning(f"   ⚠ No logic extracted for {source_workflow} (may not be indexed)")
 
-            # Loop through all Databricks pipelines
-            all_excel_files = []
-            all_results = []
+            # Step 3: Extract Databricks logic
+            logger.info(f"\n📊 Step 3: Extracting Databricks logic...")
+            databricks_logic = self.databricks_extractor.extract_logic(databricks_pipeline)
 
-            for pipeline_index, databricks_pipeline in enumerate(databricks_pipelines, 1):
-                pipeline_result = {}
-                pipeline_result['databricks_pipeline'] = databricks_pipeline
+            if not databricks_logic or databricks_logic.get('total_activities', 0) == 0:
+                logger.warning(f"   ⚠ No logic extracted for {databricks_pipeline} (may not be indexed)")
 
-                if len(databricks_pipelines) > 1:
-                    logger.info(f"\n{'='*80}")
-                    logger.info(f"🔄 Processing Pipeline {pipeline_index}/{len(databricks_pipelines)}: {databricks_pipeline}")
-                    logger.info(f"{'='*80}")
+            # Step 4: Abstract to business stages
+            logger.info(f"\n🤖 Step 4: Abstracting to business stages (AI)...")
+            business_stages = self.business_abstractor.abstract_to_business_stages(
+                source_logic,
+                databricks_logic
+            )
 
-                # Step 3: Extract Databricks logic
-                logger.info(f"\n📊 Step 3: Extracting Databricks logic...")
-                databricks_logic = self.databricks_extractor.extract_logic(databricks_pipeline)
+            result['business_stages'] = business_stages
 
-                if not databricks_logic or databricks_logic.get('total_activities', 0) == 0:
-                    logger.warning(f"   ⚠ No logic extracted for {databricks_pipeline} (may not be indexed)")
+            # Count differences
+            differences = sum(1 for stage in business_stages if stage.get('comparison') == 'Different')
+            result['differences_count'] = differences
 
-                # Step 4: Abstract to business stages
-                logger.info(f"\n🤖 Step 4: Abstracting to business stages (AI)...")
-                business_stages = self.business_abstractor.abstract_to_business_stages(
-                    source_logic,
-                    databricks_logic
-                )
+            logger.info(f"   ✅ Generated {len(business_stages)} business stages ({differences} differences)")
 
-                pipeline_result['business_stages'] = business_stages
+            # Step 5: Generate STTM
+            logger.info(f"\n🔗 Step 5: Generating STTM (AI)...")
+            sttm_mappings = self.sttm_generator.generate_sttm(
+                source_logic,
+                databricks_logic,
+                source_system
+            )
 
-                # Count differences
-                differences = sum(1 for stage in business_stages if stage.get('comparison') == 'Different')
-                pipeline_result['differences_count'] = differences
+            result['sttm_count'] = len(sttm_mappings)
+            logger.info(f"   ✅ Generated {len(sttm_mappings)} column mappings")
 
-                logger.info(f"   ✅ Generated {len(business_stages)} business stages ({differences} differences)")
+            # Step 6: Generate Excel report
+            logger.info(f"\n📄 Step 6: Generating Excel comparison report...")
+            excel_file = self.excel_generator.generate_comparison_excel(
+                source_system=source_system,
+                source_workflow=source_workflow,
+                databricks_pipeline=databricks_pipeline,
+                business_stages=business_stages,
+                source_logic=source_logic,
+                databricks_logic=databricks_logic,
+                sttm_mappings=sttm_mappings,
+                output_folder=output_folder
+            )
 
-                # Step 5: Generate STTM
-                logger.info(f"\n🔗 Step 5: Generating STTM (AI)...")
-                sttm_mappings = self.sttm_generator.generate_sttm(
-                    source_logic,
-                    databricks_logic,
-                    source_system
-                )
-
-                pipeline_result['sttm_count'] = len(sttm_mappings)
-                logger.info(f"   ✅ Generated {len(sttm_mappings)} column mappings")
-
-                # Step 6: Generate Excel report
-                logger.info(f"\n📄 Step 6: Generating Excel comparison report...")
-                excel_file = self.excel_generator.generate_comparison_excel(
-                    source_system=source_system,
-                    source_workflow=source_workflow,
-                    databricks_pipeline=databricks_pipeline,
-                    business_stages=business_stages,
-                    source_logic=source_logic,
-                    databricks_logic=databricks_logic,
-                    sttm_mappings=sttm_mappings,
-                    output_folder=output_folder
-                )
-
-                pipeline_result['excel_file'] = excel_file
-                all_excel_files.append(excel_file)
-                all_results.append(pipeline_result)
-
-                logger.info(f"   ✅ Excel file generated: {excel_file}")
-
-            # Aggregate results
-            result['databricks_pipelines'] = databricks_pipelines
-            result['pipeline_results'] = all_results
-            result['excel_files'] = all_excel_files
+            result['excel_file'] = excel_file
             result['success'] = True
-
-            # Calculate totals
-            total_business_stages = sum(r['business_stages'].__len__() for r in all_results)
-            total_sttm = sum(r['sttm_count'] for r in all_results)
-            total_differences = sum(r['differences_count'] for r in all_results)
 
             # Final summary
             logger.info("\n" + "=" * 80)
             logger.info("✅ STAG COMPARISON COMPLETE")
             logger.info("=" * 80)
-            logger.info(f"Source: {source_system}: {source_workflow}")
-            logger.info(f"Databricks Pipelines Processed: {len(databricks_pipelines)}")
-            for idx, pipeline_result in enumerate(all_results, 1):
-                logger.info(f"  {idx}. {pipeline_result['databricks_pipeline']}")
-                logger.info(f"     - Business Stages: {len(pipeline_result['business_stages'])}")
-                logger.info(f"     - STTM Mappings: {pipeline_result['sttm_count']}")
-                logger.info(f"     - Differences: {pipeline_result['differences_count']}")
-                logger.info(f"     - Excel: {pipeline_result['excel_file']}")
-            logger.info(f"\nTotals Across All Pipelines:")
-            logger.info(f"  - Business Stages: {total_business_stages}")
-            logger.info(f"  - STTM Mappings: {total_sttm}")
-            logger.info(f"  - Differences: {total_differences}")
+            logger.info(f"Excel File: {excel_file}")
+            logger.info(f"Business Stages: {len(business_stages)}")
+            logger.info(f"STTM Mappings: {len(sttm_mappings)}")
+            logger.info(f"Differences: {differences}")
             logger.info("=" * 80)
 
             return result
@@ -265,19 +234,16 @@ class STAGOrchestrator:
             errors.append(error_msg)
             return result
 
-    def _intelligent_workflow_search(self, source_system: str, source_workflow: str, interactive: bool = True):
+    def _intelligent_workflow_search(self, source_system: str, source_workflow: str) -> Optional[str]:
         """
         Use AI + vector search to find similar Databricks workflow
 
         Args:
             source_system: "hadoop" or "abinitio"
             source_workflow: Source workflow name
-            interactive: If True, return dict for user selection when multiple matches found
 
         Returns:
-            str: Databricks workflow name
-            OR dict: {'status': 'multiple_matches', 'matches': [...]} for user selection
-            OR None: No matches found
+            Databricks workflow name or None
         """
         if not self.indexer:
             logger.warning("   ⚠ No indexer available for intelligent search")
@@ -287,110 +253,40 @@ class STAGOrchestrator:
             # Search for similar Databricks workflows using vector search
             query = f"Find Databricks notebook or pipeline similar to {source_system} workflow: {source_workflow}"
 
-            # Use indexer's search_multi_collection method
-            search_results = self.indexer.search_multi_collection(
-                query=query,
-                collections=["databricks_collection"],
-                top_k=10  # Increased for better candidate selection
+            results = self.indexer.vector_store.search(
+                collection_name="databricks_collection",
+                query_text=query,
+                top_k=5
             )
-
-            results = search_results.get('databricks_collection', [])
-
-            # SAFETY CHECK: Ensure results is a list (fix for slice error)
-            if not isinstance(results, list):
-                logger.error(f"   ❌ Search results is not a list: {type(results)}")
-                return None
 
             if not results:
                 logger.warning("   ⚠ No Databricks workflows found in vector database")
                 return None
 
-            logger.info(f"   🔍 Found {len(results)} candidate Databricks workflows")
-
             # Use AI to rank and select best match
             if self.ai_analyzer and self.ai_analyzer.enabled:
-                # Build candidate list (safely slice results)
-                workflow_candidates = []
-                for i, r in enumerate(results[:10]):
-                    workflow_name = r['metadata'].get('workflow_name') or r['metadata'].get('file_path', '').split('/')[-1].replace('.json', '')
-                    description = r['metadata'].get('description', '')[:200]
-                    score = r.get('score', 0)
-
-                    workflow_candidates.append({
-                        'name': workflow_name,
-                        'description': description,
-                        'score': score,
-                        'rank': i + 1
-                    })
-
                 context = "\n".join([
-                    f"{c['rank']}. {c['name']} - {c['description']} (similarity: {c['score']:.3f})"
-                    for c in workflow_candidates
+                    f"{i+1}. {r['metadata'].get('workflow_name', r['metadata'].get('file_path', 'Unknown'))} - {r['metadata'].get('description', '')[:100]}"
+                    for i, r in enumerate(results)
                 ])
 
-                prompt = f"""Given a {source_system} workflow named "{source_workflow}", analyze these Databricks workflows and rank them by relevance.
+                prompt = f"""Given a {source_system} workflow named "{source_workflow}", which of these Databricks workflows is most similar?
 
-Databricks workflow candidates:
+Databricks workflows:
 {context}
 
-For each workflow, assess if it's a good match (confidence > 0.7). Return a JSON array with confidence scores:
-
-[
-  {{"name": "workflow_name", "confidence": 0.95, "reason": "Why it matches"}},
-  {{"name": "workflow_name2", "confidence": 0.75, "reason": "Why it matches"}},
-  ...
-]
-
-Only include workflows with confidence > 0.7. If no good matches, return empty array []."""
+Return ONLY the workflow name of the best match, nothing else. If none seem related, return "NONE"."""
 
                 response = self.ai_analyzer.analyze_code(
                     code=prompt,
-                    context=f"Workflow matching for {source_system}: {source_workflow}",
+                    context="",
                     analysis_type="workflow_extraction"
                 )
 
-                # Parse AI ranking
-                import json
-                import re
-                try:
-                    json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', response, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(1)
-                    else:
-                        json_match = re.search(r'\[.*\]', response, re.DOTALL)
-                        if json_match:
-                            json_str = json_match.group(0)
-                        else:
-                            json_str = "[]"
-
-                    ranked_matches = json.loads(json_str)
-                    good_matches = [m for m in ranked_matches if m.get('confidence', 0) > 0.7]
-
-                    if len(good_matches) == 0:
-                        logger.warning("   ⚠ AI found no good matches")
-                        return None
-                    elif len(good_matches) == 1:
-                        best_match = good_matches[0]['name']
-                        logger.info(f"   ✅ AI found single match: {best_match} (confidence: {good_matches[0]['confidence']:.2f})")
-                        return best_match
-                    else:
-                        # Multiple good matches
-                        if interactive:
-                            logger.info(f"   🔍 Found {len(good_matches)} potential matches - user selection required")
-                            return {
-                                'status': 'multiple_matches',
-                                'source_workflow': source_workflow,
-                                'source_system': source_system,
-                                'matches': good_matches
-                            }
-                        else:
-                            # Auto-select highest confidence
-                            best_match = max(good_matches, key=lambda x: x.get('confidence', 0))
-                            logger.info(f"   🤖 AI auto-selected: {best_match['name']} (confidence: {best_match['confidence']:.2f})")
-                            return best_match['name']
-
-                except (json.JSONDecodeError, Exception) as e:
-                    logger.warning(f"   Failed to parse AI ranking: {e}")
+                best_match = response.strip()
+                if best_match and best_match != "NONE":
+                    logger.info(f"   🤖 AI selected: {best_match}")
+                    return best_match
 
             # Fallback: return highest scored result
             best_result = results[0]

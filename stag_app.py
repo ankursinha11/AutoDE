@@ -1135,22 +1135,64 @@ def render_clear_collection_ui():
     if st.button("Clear Collection", type="primary", disabled=not confirm):
         with st.spinner(f"Clearing {selected_display}..."):
             try:
-                # Delete collection directory
-                collection_path = Path("./outputs/vector_db") / selected_collection
+                # CRITICAL FIX: ChromaDB uses UUID directories, not collection names
+                # Must get UUID from chroma.sqlite3 database
+                import shutil
+                import sqlite3
+
+                db_path = Path("./outputs/vector_db")
+                if not db_path.exists():
+                    st.warning(f"Vector database directory doesn't exist")
+                    return
+
+                # Get collection UUID from SQLite
+                sqlite_file = db_path / "chroma.sqlite3"
+                if not sqlite_file.exists():
+                    st.warning(f"ChromaDB metadata file not found")
+                    return
+
+                conn = sqlite3.connect(str(sqlite_file))
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM collections WHERE name = ?", (selected_collection,))
+                row = cursor.fetchone()
+                conn.close()
+
+                if not row:
+                    st.warning(f"Collection '{selected_display}' not found in database")
+                    return
+
+                collection_uuid = row[0]
+                collection_path = db_path / collection_uuid
+
                 if collection_path.exists():
-                    import shutil
                     shutil.rmtree(collection_path)
-                    st.success(f"✓ {selected_display} collection cleared successfully!")
+                    logger.info(f"Deleted collection directory: {collection_uuid}")
 
-                    # Refresh stats
-                    if st.session_state.indexer:
-                        st.session_state.stats = st.session_state.indexer.get_stats()
+                # Also delete from SQLite metadata
+                conn = sqlite3.connect(str(sqlite_file))
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM collections WHERE id = ?", (collection_uuid,))
+                cursor.execute("DELETE FROM embeddings WHERE collection_id = ?", (collection_uuid,))
+                cursor.execute("DELETE FROM segments WHERE collection = ?", (collection_uuid,))
+                conn.commit()
+                conn.close()
 
-                    st.rerun()
-                else:
-                    st.warning(f"Collection {selected_display} doesn't exist")
+                st.success(f"✓ {selected_display} collection cleared successfully!")
+                logger.info(f"Deleted collection metadata from SQLite: {selected_collection}")
+
+                # Refresh stats and reinitialize indexer
+                if st.session_state.indexer:
+                    # Reinitialize the specific collection
+                    from services.local_search.local_search_client import LocalSearchClient
+                    client = LocalSearchClient(persist_directory=str(db_path))
+                    client.create_index(selected_collection)
+                    st.session_state.indexer.collections[selected_collection] = client
+                    st.session_state.stats = st.session_state.indexer.get_stats()
+
+                st.rerun()
             except Exception as e:
                 st.error(f"Error clearing collection: {e}")
+                logger.error(f"Collection deletion error: {e}", exc_info=True)
 
 
 def render_clear_all_ui():
@@ -2490,25 +2532,50 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
         flows = parsed_result.get('flows', {})
         ports = parsed_result.get('ports', {})
 
-        # Build comprehensive content
+        # CRITICAL FIX: Embed ALL parsed components (not just first 50!)
+        # Strategy: Include ALL vertices/flows/ports names + types, skip raw mp content
+        # This ensures STAG can analyze the full graph structure even for 1295 vertices
+
         content_parts = [
             f"# Ab Initio Graph: {base_filename}\n",
             f"**File**: {graph_path.name}\n",
             f"**Vertices**: {len(vertices)}, **Flows**: {len(flows)}, **Ports**: {len(ports)}\n\n"
         ]
 
-        # Add vertex details
-        content_parts.append(f"## Vertices ({len(vertices)} total):\n")
-        for vid, vdata in list(vertices.items())[:50]:  # Limit to 50 for embedding size
+        # Add ALL vertex details (names + types only, no raw content)
+        content_parts.append(f"## All Vertices ({len(vertices)} components):\n")
+        for vid, vdata in vertices.items():
             vname = vdata.get('name', 'Unknown')
             vtype = vdata.get('component_type', vdata.get('type', 'Unknown'))
-            content_parts.append(f"- **{vname}** (type: {vtype}, id: {vid})\n")
+            vattrs = vdata.get('attributes', {})
 
-        # Add flow details
-        content_parts.append(f"\n## Flows ({len(flows)} total):\n")
-        for fid, fdata in list(flows.items())[:30]:
-            fname = fdata.get('name', f'flow_{fid}')
-            content_parts.append(f"- {fname} (id: {fid})\n")
+            # Extract key attributes (DML, layout)
+            dml = vattrs.get('dml', '')
+            layout = vattrs.get('layout', '')
+
+            content_parts.append(f"- **{vname}** (type: {vtype}, id: {vid})")
+            if dml:
+                content_parts.append(f" - DML: {dml[:100]}")
+            if layout:
+                content_parts.append(f" - Layout: {layout[:100]}")
+            content_parts.append("\n")
+
+        # Add ALL flow details (data lineage)
+        content_parts.append(f"\n## All Flows ({len(flows)} connections):\n")
+        for fid, fdata in flows.items():
+            from_vertex = fdata.get('from_vertex', 'Unknown')
+            to_vertex = fdata.get('to_vertex', 'Unknown')
+            from_port = fdata.get('from_port', '')
+            to_port = fdata.get('to_port', '')
+            content_parts.append(f"- {from_vertex}:{from_port} → {to_vertex}:{to_port}\n")
+
+        # Add port details summary
+        if ports:
+            input_ports = [p for p in ports.values() if p.get('type') == 'input']
+            output_ports = [p for p in ports.values() if p.get('type') == 'output']
+            content_parts.append(f"\n## Ports Summary:\n")
+            content_parts.append(f"- Input ports: {len(input_ports)}\n")
+            content_parts.append(f"- Output ports: {len(output_ports)}\n")
 
         # Add metadata references
         content_parts.append(f"\n## Generated Artifacts:\n")
@@ -2518,9 +2585,12 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
         if sttm_success and sttm_result.get('excel_file'):
             content_parts.append(f"- **STTM Excel**: {sttm_result['excel_file']}\n")
 
-        # Add truncated raw content
-        content_parts.append(f"\n## Raw Content (truncated):\n")
-        content_parts.append(raw_content[:10000])  # First 10K chars
+        # Add MINIMAL raw content (for context only, not analysis)
+        content_parts.append(f"\n## Graph Header (first 2000 chars):\n")
+        content_parts.append(f"```\n{raw_content[:2000]}\n```\n")
+
+        content_parts.append(f"\n**Note**: Full parsed components available at: {parsed_json_path}\n")
+        content_parts.append(f"**Graph structure**: {len(vertices)} vertices with {len(flows)} data flows\n")
 
         final_content = ''.join(content_parts)
 
@@ -2534,6 +2604,7 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
             "metadata": {
                 'file_name': graph_path.name,
                 'file_path': str(graph_path),
+                'absolute_file_path': str(graph_path.resolve()),  # For agents to read actual file
                 'system_type': 'abinitio',
                 'graph_name': base_filename,
                 'vertex_count': len(vertices),
@@ -2543,7 +2614,10 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
                 'has_sttm': sttm_success,
                 'graphflow_file': graphflow_result.get('excel_file', ''),
                 'sttm_file': sttm_result.get('excel_file', '') if sttm_success else '',
-                'parsed_json': str(parsed_json_path),
+                'parsed_json_path': str(parsed_json_path),  # CRITICAL FIX: Must be 'parsed_json_path' not 'parsed_json'
+                'graphflow_excel': graphflow_result.get('excel_file', ''),  # Alternative lookup
+                'automation_sttm_json': sttm_result.get('json_file', '') if sttm_success else '',
+                'automation_sttm_excel': sttm_result.get('excel_file', '') if sttm_success else '',
                 'raw_content_size': len(raw_content)
             }
         }

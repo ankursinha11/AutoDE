@@ -166,10 +166,16 @@ class ChatOrchestrator:
             StreamUpdate objects with thinking process and results
         """
         try:
-            # Check if there's a pending selection and user is responding with a number
-            if self.pending_selection and query.strip().isdigit():
-                yield from self._handle_user_selection(query, context)
-                return
+            # CRITICAL FIX: Check if there's a pending selection and user is responding with selection
+            # Support: "1", "1,3,4", "1 3 4", "all"
+            if self.pending_selection:
+                query_lower = query.strip().lower()
+                # Check if it's a selection response (digits, commas, spaces, or "all")
+                is_selection = (query_lower == 'all' or
+                               all(c.isdigit() or c in [',', ' '] for c in query.strip()))
+                if is_selection and query.strip():
+                    yield from self._handle_user_selection(query, context)
+                    return
 
             # Phase 1: Thinking - Analyze query
             yield StreamUpdate(
@@ -1752,14 +1758,19 @@ Use these queries to validate the comparison results:
         result: Dict[str, Any],
         source_system: str,
         source_workflow: str,
-        classified = None
+        classified = None,
+        pipeline_index: int = 1,  # NEW: Which pipeline in multi-select (1-based)
+        total_pipelines: int = 1   # NEW: Total pipelines being processed
     ) -> Generator[StreamUpdate, None, None]:
         """Generate comprehensive STAG comparison response with inline details"""
+
+        # Add prefix for multi-pipeline processing
+        prefix = f"[{pipeline_index}/{total_pipelines}] " if total_pipelines > 1 else ""
 
         # Success - stream progress updates
         yield StreamUpdate(
             type=UpdateType.TASK_COMPLETE,
-            content=f"✅ Mapping found: {source_workflow} → {result['databricks_pipeline']}"
+            content=f"{prefix}✅ Mapping found: {source_workflow} → {result['databricks_pipeline']}"
         )
 
         yield StreamUpdate(
@@ -1779,7 +1790,7 @@ Use these queries to validate the comparison results:
 
         yield StreamUpdate(
             type=UpdateType.TASK_COMPLETE,
-            content=f"✅ Created comprehensive Excel comparison report"
+            content=f"{prefix}✅ Created comprehensive Excel comparison report"
         )
 
         # Build final answer with detailed sheet descriptions
@@ -1790,7 +1801,10 @@ Use these queries to validate the comparison results:
         import os
         filename = os.path.basename(result['excel_file'])
 
-        answer = f"""## 📊 STAG Comparison Report Generated Successfully!
+        # Add header for multi-pipeline processing
+        pipeline_header = f"### Comparison {pipeline_index} of {total_pipelines}\n\n" if total_pipelines > 1 else ""
+
+        answer = f"""{pipeline_header}## 📊 STAG Comparison Report Generated Successfully!
 
 **Source System:** {source_system.upper()}
 **Source Workflow:** `{source_workflow}`
@@ -1946,57 +1960,89 @@ The comprehensive Excel workbook contains **5 detailed sheets**:
     ) -> Generator[StreamUpdate, None, None]:
         """Handle user's numeric selection from multiple options"""
         try:
-            selection_num = int(query.strip())
             pending = self.pending_selection
 
             if pending['type'] == 'stag_workflow_selection':
                 matches = pending['matches']
+                query_lower = query.strip().lower()
 
-                # Validate selection
-                if selection_num < 1 or selection_num > len(matches):
+                # CRITICAL FIX: Support multiple selections (1,3,4 or "all")
+                selected_indices = []
+
+                if query_lower == 'all':
+                    # Select all pipelines
+                    selected_indices = list(range(len(matches)))
                     yield StreamUpdate(
-                        type=UpdateType.ERROR,
-                        content=f"❌ Invalid selection. Please choose a number between 1 and {len(matches)}."
+                        type=UpdateType.THINKING,
+                        content=f"✅ Selected: **ALL {len(matches)} pipelines**"
                     )
-                    return
+                else:
+                    # Parse selection: support "1,3,4" or "1 3 4"
+                    selection_str = query.replace(',', ' ').strip()
+                    try:
+                        selected_numbers = [int(x.strip()) for x in selection_str.split() if x.strip()]
 
-                # Get selected workflow
-                selected = matches[selection_num - 1]
-                selected_workflow = selected['name']
+                        # Validate all selections
+                        for num in selected_numbers:
+                            if num < 1 or num > len(matches):
+                                yield StreamUpdate(
+                                    type=UpdateType.ERROR,
+                                    content=f"❌ Invalid selection: {num}. Please choose numbers between 1 and {len(matches)}."
+                                )
+                                return
+                            selected_indices.append(num - 1)  # Convert to 0-based index
 
-                yield StreamUpdate(
-                    type=UpdateType.THINKING,
-                    content=f"✅ Selected: **{selected_workflow}** (confidence: {selected['confidence']:.0%})"
-                )
+                        # Remove duplicates while preserving order
+                        seen = set()
+                        selected_indices = [x for x in selected_indices if not (x in seen or seen.add(x))]
+
+                        # Show selected pipelines
+                        selected_names = [matches[i]['name'] for i in selected_indices]
+                        pipelines_str = "\n   • ".join(selected_names)
+                        yield StreamUpdate(
+                            type=UpdateType.THINKING,
+                            content=f"✅ Selected {len(selected_indices)} pipeline(s):\n   • {pipelines_str}"
+                        )
+
+                    except ValueError:
+                        yield StreamUpdate(
+                            type=UpdateType.ERROR,
+                            content=f"❌ Invalid input. Please enter numbers (e.g., `1,3,4` or `all`)."
+                        )
+                        return
 
                 # Clear pending selection
                 source_system = pending['source_system']
                 source_workflow = pending['source_workflow']
                 self.pending_selection = None
 
-                # Continue with STAG comparison using selected workflow
-                yield StreamUpdate(
-                    type=UpdateType.TASK_START,
-                    content="Generating STAG comparison with selected workflow..."
-                )
+                # Generate comparison for EACH selected pipeline
+                for idx, pipeline_idx in enumerate(selected_indices, 1):
+                    selected = matches[pipeline_idx]
+                    selected_workflow = selected['name']
 
-                result = self.stag_orchestrator.generate_comparison(
-                    source_system=source_system,
-                    source_workflow=source_workflow,
-                    databricks_pipeline=selected_workflow  # Use selected workflow
-                )
-
-                # Process result (same as normal STAG flow)
-                if not result['success']:
-                    error_msg = ', '.join(result['errors']) if result['errors'] else 'Unknown error'
                     yield StreamUpdate(
-                        type=UpdateType.ERROR,
-                        content=f"❌ STAG comparison failed: {error_msg}"
+                        type=UpdateType.TASK_START,
+                        content=f"Generating STAG comparison [{idx}/{len(selected_indices)}]: {source_workflow} → {selected_workflow}..."
                     )
-                    return
 
-                # Continue with normal STAG response generation
-                yield from self._generate_stag_response(result, source_system, source_workflow, classified=None)
+                    result = self.stag_orchestrator.generate_comparison(
+                        source_system=source_system,
+                        source_workflow=source_workflow,
+                        databricks_pipeline=selected_workflow  # Use selected workflow
+                    )
+
+                    # Process result
+                    if not result['success']:
+                        error_msg = ', '.join(result['errors']) if result['errors'] else 'Unknown error'
+                        yield StreamUpdate(
+                            type=UpdateType.ERROR,
+                            content=f"❌ STAG comparison [{idx}/{len(selected_indices)}] failed: {error_msg}"
+                        )
+                        continue  # Continue with next pipeline
+
+                    # Generate response for this comparison
+                    yield from self._generate_stag_response(result, source_system, source_workflow, classified=None, pipeline_index=idx, total_pipelines=len(selected_indices))
 
         except ValueError:
             yield StreamUpdate(
@@ -2125,7 +2171,7 @@ If you cannot determine the workflow, set confidence to 0.0.
 
                 yield StreamUpdate(
                     type=UpdateType.THINKING,
-                    content=f"🔍 Found {len(matches)} potential Databricks workflows for `{source_workflow}`:\n\n{match_list}\n\n**Please select which workflow to compare:**\nType the number (1-{len(matches)}) of your choice."
+                    content=f"🔍 Found {len(matches)} Databricks pipelines for `{source_workflow}`:\n\n{match_list}\n\n**Please select which pipeline(s) to compare:**\n• Type a single number (e.g., `1`)\n• Type multiple numbers separated by commas or spaces (e.g., `1,3,4` or `1 3 4`)\n• Type `all` to compare against all pipelines"
                 )
                 return  # Wait for user to select
 
