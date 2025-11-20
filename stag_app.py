@@ -2478,21 +2478,54 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
 
         # Convert VM_FAWN Excel to Enhanced JSON (if available)
         if vm_fawn_excel:
-            status_text.text(f"📋 Step 1c: Converting VM_FAWN Excel to Enhanced JSON...")
+            status_text.text(f"📋 Step 1c: Converting VM_FAWN Excel + Enhanced Parser (hybrid)...")
             progress_bar.progress(15)
 
+            # First: Get component details from VM_FAWN
             from parsers.abinitio.vm_fawn_excel_converter import VMFAWNExcelConverter
             converter = VMFAWNExcelConverter()
 
             parsed_json_path = parsed_folder / f"{base_filename}_components.json"
 
-            parsed_result = converter.convert_excel_to_json(
+            vm_fawn_result = converter.convert_excel_to_json(
                 vm_fawn_excel_path=str(vm_fawn_excel),
                 source_mp_file_path=str(graph_path),
-                output_json_path=str(parsed_json_path)
+                output_json_path=None  # Don't save yet
             )
 
-            st.success(f"✅ Using VM_FAWN data → Detailed transformation extraction")
+            # Second: Get flows and ports from Enhanced Parser
+            from parsers.abinitio.enhanced_parser import EnhancedAbInitioParser
+            enhanced_parser = EnhancedAbInitioParser()
+            enhanced_result = enhanced_parser.parse_mp_file(
+                file_path=str(graph_path),
+                output_folder=None,  # Don't save
+                output_filename=None
+            )
+
+            # Merge: VM_FAWN vertices + Enhanced Parser flows/ports
+            parsed_result = {
+                'metadata': vm_fawn_result.get('metadata', {}),
+                'raw_content': vm_fawn_result.get('raw_content', ''),
+                'vertices': vm_fawn_result.get('vertices', {}),  # From VM_FAWN (detailed)
+                'flows': enhanced_result.get('flows', {}),       # From Enhanced Parser (connected)
+                'ports': enhanced_result.get('ports', {}),       # From Enhanced Parser (complete)
+                'graphs': vm_fawn_result.get('graphs', {}),
+                'summary': {
+                    'total_vertices': len(vm_fawn_result.get('vertices', {})),
+                    'total_flows': len(enhanced_result.get('flows', {})),
+                    'total_ports': len(enhanced_result.get('ports', {})),
+                    'total_graphs': len(vm_fawn_result.get('graphs', {})),
+                    'components_with_transforms': vm_fawn_result.get('summary', {}).get('components_with_transforms', 0),
+                    'datasets_count': vm_fawn_result.get('summary', {}).get('datasets_count', 0)
+                }
+            }
+
+            # Save merged result
+            import json
+            with open(parsed_json_path, 'w', encoding='utf-8') as f:
+                json.dump(parsed_result, f, indent=2)
+
+            st.success(f"✅ Hybrid: VM_FAWN components ({len(parsed_result['vertices'])}) + Enhanced Parser flows ({len(parsed_result['flows'])}) & ports ({len(parsed_result['ports'])})")
 
         else:
             # Fallback to Enhanced Parser
