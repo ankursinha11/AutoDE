@@ -292,7 +292,9 @@ class AbInitioDatabricksComparison:
         output_path = Path(output_folder)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        json_file = output_path / f"{pipeline_name.replace('/', '_')}_databricks.json"
+        # Extract just the pipeline base name (remove directory path and extension)
+        pipeline_base = Path(pipeline_name).stem  # e.g., "pl_TUSourcedFamilyMemberLink"
+        json_file = output_path / f"{pipeline_base}_databricks.json"
 
         # Check if indexer has Databricks data
         if not self.indexer:
