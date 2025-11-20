@@ -185,10 +185,10 @@ class VMFAWNExcelConverter:
 
         # Fallback: Extract flows from raw content if GraphFlow sheet is empty
         if flow_count_from_sheet == 0:
-            print(f"   ⚠️ GraphFlow sheet empty, extracting flows from raw content...")
-            extracted_flows = self._extract_flows_from_raw(raw_content, vertices)
+            print(f"   ⚠️ GraphFlow sheet empty, extracting flows from .mp binary format...")
+            extracted_flows = self._extract_flows_enhanced(raw_content)
             flows.update(extracted_flows)
-            print(f"   ✓ Extracted {len(extracted_flows)} flows from raw content")
+            print(f"   ✓ Extracted {len(extracted_flows)} flows from .mp file")
 
         # Build ports from flows and vertices
         ports = self._build_ports_from_flows(flows, vertices)
@@ -245,7 +245,48 @@ class VMFAWNExcelConverter:
             return ''
         return str(value).strip()
 
-    def _extract_flows_from_raw(self, raw_content: str, vertices: Dict) -> Dict[str, Any]:
+    def _extract_flows_enhanced(self, raw_content: str) -> Dict[str, Any]:
+        """
+        Extract flows from Ab Initio .mp binary format
+
+        Pattern: {2010210004|XXGflow|21|0|41|0|...}
+        """
+        flows = {}
+        flow_idx = 0
+
+        # Pattern from Enhanced Parser
+        flow_pattern = r'\{(\d+)\|XXGflow\|(\d+)\|(\d+)\|(\d+)\|(\d+)\|'
+        flow_matches = list(re.finditer(flow_pattern, raw_content))
+
+        for i, match in enumerate(flow_matches):
+            record_id = match.group(1)  # e.g., 2010210004
+            flow_id = match.group(2)    # e.g., 21
+
+            # Create unique key
+            unique_key = f"flow_{flow_idx}"
+
+            # Extract block for this flow (simplified)
+            start_pos = match.start()
+            # Find the next few hundred chars to get flow info
+            block = raw_content[start_pos:start_pos+500]
+
+            flows[unique_key] = {
+                'component_id': flow_id,
+                'component_type': 'XXGflow',
+                'name': f'flow_{flow_id}',
+                'type': 'DATA_FLOW',
+                'from_vertex': '',  # Will be enriched later
+                'to_vertex': '',
+                'from_port': 'out',
+                'to_port': 'in',
+                'flow_type': 'DATA_FLOW',
+                'raw_content': f'Flow ID: {flow_id}'
+            }
+            flow_idx += 1
+
+        return flows
+
+    def _extract_flows_from_raw_simple(self, raw_content: str, vertices: Dict) -> Dict[str, Any]:
         """
         Extract flows from raw .mp file content
 
