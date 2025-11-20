@@ -2361,6 +2361,42 @@ def reindex_abinitio_from_directory(directory_path: str):
         progress_bar.empty()
 
 
+def _find_vm_fawn_excel_for_mp(mp_file_path: Path) -> Optional[Path]:
+    """
+    Find VM_FAWN generated Excel file for a given .mp file
+
+    Search pattern: Input Files/VM_FAWN/bbi_preprocessing_output/{filename}_*.xlsx
+
+    Args:
+        mp_file_path: Path to .mp file
+
+    Returns:
+        Path to VM_FAWN Excel if found, None otherwise
+    """
+    try:
+        mp_basename = mp_file_path.stem  # e.g., "265_fileTransferToHadoopServer"
+
+        # Search in VM_FAWN output folder
+        vm_fawn_folder = Path("Input Files/VM_FAWN/bbi_preprocessing_output")
+
+        if not vm_fawn_folder.exists():
+            return None
+
+        # Find Excel files matching pattern: {mp_basename}_*.xlsx
+        matching_files = list(vm_fawn_folder.glob(f"{mp_basename}_*.xlsx"))
+
+        if matching_files:
+            # Return most recent file (by modification time)
+            latest_file = max(matching_files, key=lambda p: p.stat().st_mtime)
+            return latest_file
+
+        return None
+
+    except Exception as e:
+        logger.warning(f"Error finding VM_FAWN Excel for {mp_file_path.name}: {e}")
+        return None
+
+
 def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool = True, generate_sttm: bool = True):
     """
     Index a single Ab Initio graph with configurable pipeline:
@@ -2410,20 +2446,41 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
         graphflow_folder.mkdir(parents=True, exist_ok=True)
         sttm_folder.mkdir(parents=True, exist_ok=True)
 
-        # STEP 1: Parse with Enhanced Parser
-        status_text.text(f"📋 Step 1/4: Parsing {base_filename} with enhanced parser (preserving raw_content)...")
+        # STEP 1: Parse with VM_FAWN Excel converter or Enhanced Parser
+        status_text.text(f"📋 Step 1/4: Checking for VM_FAWN Excel data...")
         progress_bar.progress(15)
 
-        from parsers.abinitio.enhanced_parser import EnhancedAbInitioParser
-        parser = EnhancedAbInitioParser()
+        # Check for VM_FAWN Excel file
+        vm_fawn_excel = _find_vm_fawn_excel_for_mp(graph_path)
 
-        parsed_result = parser.parse_mp_file(
-            file_path=str(graph_path),
-            output_folder=str(parsed_folder),
-            output_filename=f"{base_filename}_components.json"
-        )
+        if vm_fawn_excel:
+            st.info(f"📊 Found VM_FAWN Excel - Using detailed transformation extraction")
+            status_text.text(f"📋 Step 1/4: Converting VM_FAWN Excel to Enhanced JSON format...")
 
-        parsed_json_path = parsed_folder / f"{base_filename}_components.json"
+            from parsers.abinitio.vm_fawn_excel_converter import VMFAWNExcelConverter
+            converter = VMFAWNExcelConverter()
+
+            parsed_json_path = parsed_folder / f"{base_filename}_components.json"
+
+            parsed_result = converter.convert_excel_to_json(
+                vm_fawn_excel_path=str(vm_fawn_excel),
+                source_mp_file_path=str(graph_path),
+                output_json_path=str(parsed_json_path)
+            )
+        else:
+            st.info(f"📋 No VM_FAWN Excel found - Using Enhanced Parser (basic extraction)")
+            status_text.text(f"📋 Step 1/4: Parsing {base_filename} with enhanced parser (preserving raw_content)...")
+
+            from parsers.abinitio.enhanced_parser import EnhancedAbInitioParser
+            parser = EnhancedAbInitioParser()
+
+            parsed_result = parser.parse_mp_file(
+                file_path=str(graph_path),
+                output_folder=str(parsed_folder),
+                output_filename=f"{base_filename}_components.json"
+            )
+
+            parsed_json_path = parsed_folder / f"{base_filename}_components.json"
 
         vertex_count = len(parsed_result.get('vertices', {}))
         st.success(f"✅ Step 1 Complete: Parsed {vertex_count} vertices, {len(parsed_result.get('flows', {}))} flows")
