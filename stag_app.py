@@ -2497,20 +2497,16 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
             from parsers.abinitio.enhanced_parser import EnhancedAbInitioParser
             enhanced_parser = EnhancedAbInitioParser()
 
-            # Generate Enhanced Parser output to temp file
-            enhanced_json_path = enhanced_parser.parse_mp_file(
+            # Enhanced Parser returns the dict directly (also saves to file)
+            enhanced_result = enhanced_parser.parse_mp_file(
                 file_path=str(graph_path),
                 output_folder=str(parsed_folder),
                 output_filename=f"{base_filename}_enhanced_temp.json"
             )
 
-            # Load the Enhanced Parser result
-            import json
-            if enhanced_json_path and Path(enhanced_json_path).exists():
-                with open(enhanced_json_path, 'r', encoding='utf-8') as f:
-                    enhanced_result = json.load(f)
-            else:
-                logger.warning("Enhanced Parser did not generate output, using empty flows/ports")
+            # Enhanced Parser returns the dict directly, no need to load from file
+            if not enhanced_result or not isinstance(enhanced_result, dict):
+                logger.warning("Enhanced Parser did not return valid result, using empty flows/ports")
                 enhanced_result = {'flows': {}, 'ports': {}}
 
             # Merge: VM_FAWN vertices + Enhanced Parser flows/ports
