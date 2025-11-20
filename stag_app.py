@@ -2446,16 +2446,40 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
         graphflow_folder.mkdir(parents=True, exist_ok=True)
         sttm_folder.mkdir(parents=True, exist_ok=True)
 
-        # STEP 1: Parse with VM_FAWN Excel converter or Enhanced Parser
-        status_text.text(f"📋 Step 1/4: Checking for VM_FAWN Excel data...")
-        progress_bar.progress(15)
+        # STEP 1: Automated VM_FAWN → Enhanced JSON Pipeline
+        status_text.text(f"📋 Step 1a: Running VM_FAWN parser (automated)...")
+        progress_bar.progress(10)
 
-        # Check for VM_FAWN Excel file
-        vm_fawn_excel = _find_vm_fawn_excel_for_mp(graph_path)
+        # Try to run VM_FAWN automatically
+        vm_fawn_excel = None
+        try:
+            from parsers.abinitio.vm_fawn_auto_runner import VMFAWNAutoRunner
 
+            st.info(f"🤖 Running VM_FAWN parser automatically...")
+            runner = VMFAWNAutoRunner()
+            vm_fawn_excel = runner.run_vm_fawn(str(graph_path))
+
+            if vm_fawn_excel:
+                st.success(f"✅ VM_FAWN generated: {vm_fawn_excel.name}")
+            else:
+                st.warning(f"⚠️ VM_FAWN execution failed")
+
+        except Exception as e:
+            logger.warning(f"VM_FAWN auto-run failed: {e}")
+            st.warning(f"⚠️ VM_FAWN auto-run error: {str(e)[:100]}")
+
+        # If auto-run failed, check for existing VM_FAWN Excel
+        if not vm_fawn_excel:
+            status_text.text(f"📋 Step 1b: Checking for existing VM_FAWN Excel...")
+            vm_fawn_excel = _find_vm_fawn_excel_for_mp(graph_path)
+
+            if vm_fawn_excel:
+                st.info(f"📊 Found existing VM_FAWN Excel: {vm_fawn_excel.name}")
+
+        # Convert VM_FAWN Excel to Enhanced JSON (if available)
         if vm_fawn_excel:
-            st.info(f"📊 Found VM_FAWN Excel - Using detailed transformation extraction")
-            status_text.text(f"📋 Step 1/4: Converting VM_FAWN Excel to Enhanced JSON format...")
+            status_text.text(f"📋 Step 1c: Converting VM_FAWN Excel to Enhanced JSON...")
+            progress_bar.progress(15)
 
             from parsers.abinitio.vm_fawn_excel_converter import VMFAWNExcelConverter
             converter = VMFAWNExcelConverter()
@@ -2467,9 +2491,14 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
                 source_mp_file_path=str(graph_path),
                 output_json_path=str(parsed_json_path)
             )
+
+            st.success(f"✅ Using VM_FAWN data → Detailed transformation extraction")
+
         else:
-            st.info(f"📋 No VM_FAWN Excel found - Using Enhanced Parser (basic extraction)")
-            status_text.text(f"📋 Step 1/4: Parsing {base_filename} with enhanced parser (preserving raw_content)...")
+            # Fallback to Enhanced Parser
+            st.info(f"📋 Falling back to Enhanced Parser (basic extraction)")
+            status_text.text(f"📋 Step 1c: Parsing with Enhanced Parser...")
+            progress_bar.progress(15)
 
             from parsers.abinitio.enhanced_parser import EnhancedAbInitioParser
             parser = EnhancedAbInitioParser()
