@@ -312,6 +312,21 @@ def render_sidebar():
 
     st.sidebar.divider()
 
+    # Ab Initio Configuration
+    st.sidebar.subheader("🔧 Ab Initio Settings")
+
+    # Initialize abinitio_project_root if not exists
+    if 'abinitio_project_root' not in st.session_state:
+        st.session_state.abinitio_project_root = "Input Files/blade"
+
+    st.session_state.abinitio_project_root = st.sidebar.text_input(
+        "Project Root Path",
+        value=st.session_state.abinitio_project_root,
+        help="Path to Ab Initio codebase root (e.g., 'Input Files/blade' or './abinitio_repos/')"
+    )
+
+    st.sidebar.divider()
+
     # File upload section
     st.sidebar.subheader("📁 Index Files")
 
@@ -1784,12 +1799,14 @@ def index_all_repository_files_with_ai(
         # Initialize VM_Automation STTM generator
         try:
             from parsers.abinitio.automation import AbInitioSTTMGenerator
+            # Get project root from session state or use default
+            project_root = st.session_state.get('abinitio_project_root', 'Input Files/blade')
             automation_sttm_gen = AbInitioSTTMGenerator(
-                blade_path="Input Files/blade",
+                blade_path=project_root,
                 output_folder=str(automation_sttm_folder),
                 ai_analyzer=ai_analyzer
             )
-            logger.info("✅ AbInitioSTTMGenerator initialized for STTM automation")
+            logger.info(f"✅ AbInitioSTTMGenerator initialized with project root: {project_root}")
         except Exception as e:
             logger.warning(f"Could not initialize AbInitioSTTMGenerator: {e}")
             automation_sttm_gen = None
@@ -2453,8 +2470,11 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
         from parsers.abinitio.codebase_scanner import AbInitioCodebaseScanner
         from parsers.abinitio.parameter_resolver import AbInitioParameterResolver
 
+        # Get project root from session state or use default
+        project_root = st.session_state.get('abinitio_project_root', 'Input Files/blade')
+
         # Scan for .pset, .dml, and other artifacts
-        scanner = AbInitioCodebaseScanner("Input Files/blade")
+        scanner = AbInitioCodebaseScanner(project_root)
         scan_result = scanner.scan(str(graph_path))
 
         artifact_stats = scan_result['statistics']
@@ -2608,6 +2628,10 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
                 status_text.text(f"🎨 Step 2b: Generating flow diagram...")
                 progress_bar.progress(40)
 
+                diagram_generated = False
+                diagram_path = None
+
+                # Try Graphviz first
                 try:
                     from parsers.abinitio.graph_flow.diagram_generator import AbInitioFlowDiagramGenerator
                     diagram_gen = AbInitioFlowDiagramGenerator()
@@ -2620,13 +2644,50 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
                     )
 
                     if diagram_result['success']:
-                        st.success(f"✅ Flow Diagram → {diagram_result['diagram_path']}")
+                        st.success(f"✅ Flow Diagram (Graphviz PNG) → {diagram_result['diagram_path']}")
+                        diagram_generated = True
+                        diagram_path = diagram_result['diagram_path']
                     else:
-                        st.warning(f"⚠️ Diagram generation failed: {diagram_result.get('error')}")
+                        logger.warning(f"Graphviz failed: {diagram_result.get('error')}")
 
                 except Exception as e:
-                    logger.warning(f"Diagram generation error: {e}")
-                    st.warning(f"⚠️ Diagram generation skipped: {str(e)[:100]}")
+                    logger.warning(f"Graphviz not available: {e}")
+                    st.info(f"ℹ️ Graphviz not available, falling back to Mermaid diagram...")
+
+                # Fallback to Mermaid if Graphviz failed
+                if not diagram_generated:
+                    try:
+                        from parsers.abinitio.graph_flow.mermaid_diagram_generator import AbInitioMermaidDiagramGenerator
+                        mermaid_gen = AbInitioMermaidDiagramGenerator()
+
+                        # Generate both .mmd and .html
+                        mermaid_result = mermaid_gen.generate_diagram(
+                            parsed_json_path=str(parsed_json_path),
+                            output_folder=str(current_dir / "outputs" / "diagrams"),
+                            format="md"
+                        )
+
+                        if mermaid_result['success']:
+                            # Also generate HTML for easy viewing
+                            html_path = mermaid_gen.generate_html_with_mermaid(
+                                parsed_json_path=str(parsed_json_path),
+                                output_folder=str(current_dir / "outputs" / "diagrams")
+                            )
+
+                            st.success(f"✅ Flow Diagram (Mermaid) → {mermaid_result['diagram_path']}")
+                            if html_path:
+                                st.info(f"📄 Interactive HTML diagram: {html_path}")
+                            diagram_generated = True
+                            diagram_path = mermaid_result['diagram_path']
+                        else:
+                            st.warning(f"⚠️ Mermaid diagram failed: {mermaid_result.get('error')}")
+
+                    except Exception as e:
+                        logger.error(f"Mermaid diagram generation error: {e}")
+                        st.warning(f"⚠️ Diagram generation failed: {str(e)[:100]}")
+
+                if not diagram_generated:
+                    st.warning(f"⚠️ Could not generate flow diagram (install Graphviz or check logs)")
 
             else:
                 st.warning(f"⚠️ GraphFlow generation failed: {graphflow_result.get('error')}")
@@ -2640,8 +2701,11 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
 
             from parsers.abinitio.automation.abinitio_sttm_generator import AbInitioSTTMGenerator
 
+            # Get project root from session state
+            project_root = st.session_state.get('abinitio_project_root', 'Input Files/blade')
+
             sttm_gen = AbInitioSTTMGenerator(
-                blade_path="Input Files/blade/dml",
+                blade_path=project_root,
                 output_folder=str(sttm_folder),
                 ai_analyzer=st.session_state.ai_analyzer
             )
