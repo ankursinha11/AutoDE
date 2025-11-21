@@ -1,0 +1,18 @@
+================================================================================
+RAW LLM RESPONSE
+================================================================================
+{
+  "total_outputs": 2,
+  "outputs": [
+    {
+      "output_name": "Output_File",
+      "output_component_id": "567",
+      "output_dataset": "$AI_MFS_TEMP/${fileNamePrefix}ediTUSourcedFamilyMemberLink.dat"
+    },
+    {
+      "output_name": "OFile_ediTUSourcedFamilyMemberLink.dat",
+      "output_component_id": "ds_4",
+      "output_dataset": "OFile_ediTUSourcedFamilyMemberLink.dat"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "main_graph_id": "1",
+  "main_graph_name": "1500_CDD_TUSourcedFamilyMemberLink",
+  "total_outputs": 2,
+  "graph_summary": {
+    "graph_name": "1500_CDD_TUSourcedFamilyMemberLink",
+    "summary": "This graph creates linked family member accounts for patients by analyzing and connecting records based on unique identifiers (PermIDs). By establishing these family relationships, the process enables more comprehensive patient coverage analysis and reporting, supporting improved healthcare coordination and billing accuracy. The business value lies in enhancing data integrity and enabling downstream systems to recognize and process family-linked patient accounts for operational, financial, and regulatory purposes.",
+    "inputs": [
+      {
+        "input_name": "IFileTUSourcedFamilyMemberLink",
+        "input_dataset": "${outputMfsFilePath}/${fileNamePrefix}${IN_TABLE_NAME}.dat",
+        "description": "Contains existing family member link data for patients, used to establish relationships."
+      },
+      {
+        "input_name": "IFilePatientAcctsXRefPermID",
+        "input_dataset": "${outputMfsFilePath}/${fileNamePrefix}${IN_TABLE_NAME}.dat",
+        "description": "Cross-reference file mapping patient accounts to PermIDs, enabling identification of family connections."
+      },
+      {
+        "input_name": "IFileTU_eScan_PatientAcct_PermIDMappingRaw",
+        "input_dataset": "${outputMfsFilePath}/${fileNamePrefix}${IN_TABLE_NAME}.dat",
+        "description": "Raw mapping data between patient accounts and PermIDs, supporting the linking logic."
+      }
+    ],
+    "outputs": [
+      {
+        "output_name": "Output_File",
+        "output_dataset": "$AI_MFS_TEMP/${fileNamePrefix}ediTUSourcedFamilyMemberLink.dat",
+        "description": "The final file containing the newly established family member links, ready for use in downstream healthcare and billing processes."
+      },
+      {
+        "output_name": "OFile_ediTUSourcedFamilyMemberLink.dat",
+        "output_dataset": "OFile_ediTUSourcedFamilyMemberLink.dat",
+        "description": "Staging output of the linked family member accounts, formatted for integration with other systems."
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "output_name": "Output_File",
+      "output_component_id": "567",
+      "output_dataset": "$AI_MFS_TEMP/${fileNamePrefix}ediTUSourcedFamilyMemberLink.dat",
+      "error": "Failed to parse LLM response",
+      "mappings": []
+    },
+    {
+      "output_name": "OFile_ediTUSourcedFamilyMemberLink.dat",
+      "output_component_id": "ds_4",
+      "output_dataset": "OFile_ediTUSourcedFamilyMemberLink.dat",
+      "error": "Failed to parse LLM response",
+      "mappings": []
+    }
+  ]
+}

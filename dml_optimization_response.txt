@@ -1,0 +1,75 @@
+================================================================================
+RAW LLM RESPONSE
+================================================================================
+{
+  "required_sections": {
+    "ediHFCPropagationUserDefinedTypes.dml": [
+      {
+        "type_name": "typeTUSourcedFamilyMemberLinkStaging",
+        "required_fields": [
+          "decimal(\"\\x01\") hospitalfk1",
+          "decimal(\"\\x01\") patientacctifk1",
+          "decimal(\"\\x01\") hospitalfk2",
+          "decimal(\"\\x01\") patientacctifk2",
+          "string(1) newline = \"\\n\""
+        ]
+      },
+      {
+        "type_name": "typePatientAcctsXRefPermID",
+        "required_fields": [
+          "decimal(\"\\x01\") patientacctsxrefpermidpk",
+          "decimal(\"\\x01\") hospitalfk",
+          "decimal(\"\\x01\") patientacctifk",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=12) permid",
+          "decimal(\"\\x01\") tu_escan_patientacct_permidmappingrawfk = NULL(\"\")",
+          "datetime(\"YYYY-MM-DD HH24:MI:SS.NNNNNN\")(\"\\x01\") createdate",
+          "decimal(\"\\x01\") tu_escan_patientacct_permidmappingrawcmfk = NULL(\"\")",
+          "decimal(\"\\x01\") isdeleted = NULL(\"\")",
+          "string(1) newline = \"\\n\""
+        ]
+      },
+      {
+        "type_name": "typeTU_eScan_PatientAcct_PermIDMappingRaw",
+        "required_fields": [
+          "decimal(\"\\x01\") tu_escan_patientacct_permidmappingrawpk",
+          "decimal(\"\\x01\") tu_escan_databatchfk",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=12) permid",
+          "decimal(\"\\x01\") patientacctifk",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=2) matchind = NULL(\"\")",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=12) hhpersonpermid",
+          "datetime(\"YYYY-MM-DD HH24:MI:SS.NNNNNN\")(\"\\x01\") createdate",
+          "decimal(\"\\x01\") isdeleted = NULL(\"\")",
+          "string(1) newline = \"\\n\""
+        ]
+      },
+      {
+        "type_name": "typeCharlotte271FamilyDataStaging",
+        "required_fields": [
+          "decimal(\"\\x01\") hospitalfk",
+          "decimal(\"\\x01\") patientacctifk",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=12) permid",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=12) familymemberpermid",
+          "decimal(\"\\x01\") tu_escan_policyinforawfk",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=100) policyid = NULL(\"\")",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=50) payerid = NULL(\"\")",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=20) clientid = NULL(\"\")",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=100) payerlastnameorgname = NULL(\"\")",
+          "string(1) newline = \"\\n\""
+        ]
+      }
+    ],
+    "Hospitals.dml": [
+      {
+        "type_name": "typeHospitals",
+        "required_fields": [
+          "decimal(\"\\x01\") hospitalpk",
+          "decimal(\"\\x01\") hcsystemfk",
+          "decimal(\"\\x01\") hospcontroltypefk = NULL(\"\")",
+          "decimal(\"\\x01\") hospgpofk = NULL(\"\")",
+          "decimal(\"\\x01\") hospsystemcodefk = NULL(\"\")",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=50) hospitalname",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=10) abbrname",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=15) phone = NULL(\"\")",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=50) addr1 = NULL(\"\")",
+          "string(\"\\x01\",charset=\"windows-1252\", maximum_length=50) addr2 = NULL(\"\")",
+          "string(\"
