@@ -2446,6 +2446,28 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
         graphflow_folder.mkdir(parents=True, exist_ok=True)
         sttm_folder.mkdir(parents=True, exist_ok=True)
 
+        # NEW: STEP 0 - Scan codebase for related artifacts
+        status_text.text(f"🔍 Step 0: Scanning codebase for related artifacts...")
+        progress_bar.progress(5)
+
+        from parsers.abinitio.codebase_scanner import AbInitioCodebaseScanner
+        from parsers.abinitio.parameter_resolver import AbInitioParameterResolver
+
+        # Scan for .pset, .dml, and other artifacts
+        scanner = AbInitioCodebaseScanner("Input Files/blade")
+        scan_result = scanner.scan(str(graph_path))
+
+        artifact_stats = scan_result['statistics']
+        st.info(f"🔍 Found artifacts: {artifact_stats['graphs']} graphs, {artifact_stats['psets']} psets, {artifact_stats['dml_files']} DML files")
+
+        # Load parameter sets for ${VAR} resolution
+        param_resolver = AbInitioParameterResolver()
+        if artifact_stats['psets'] > 0:
+            pset_paths = scanner.get_artifact_paths('psets')
+            loaded_params = param_resolver.load_multiple_psets(pset_paths[:5])  # Load first 5 psets
+            if loaded_params > 0:
+                st.success(f"✅ Loaded {loaded_params} parameters from {len(pset_paths[:5])} .pset files")
+
         # STEP 1: Automated VM_FAWN → Enhanced JSON Pipeline
         status_text.text(f"📋 Step 1a: Running VM_FAWN parser (automated)...")
         progress_bar.progress(10)
@@ -2581,6 +2603,31 @@ def reindex_single_abinitio_graph(graph_file_path: str, generate_graphflow: bool
 
             if graphflow_result['success']:
                 st.success(f"✅ GraphFlow Excel → {graphflow_result['excel_file']}")
+
+                # NEW: Step 2b - Generate flow diagram
+                status_text.text(f"🎨 Step 2b: Generating flow diagram...")
+                progress_bar.progress(40)
+
+                try:
+                    from parsers.abinitio.graph_flow.diagram_generator import AbInitioFlowDiagramGenerator
+                    diagram_gen = AbInitioFlowDiagramGenerator()
+
+                    diagram_result = diagram_gen.generate_diagram(
+                        parsed_json_path=str(parsed_json_path),
+                        output_folder=str(current_dir / "outputs" / "diagrams"),
+                        format="png",
+                        layout_engine="dot"
+                    )
+
+                    if diagram_result['success']:
+                        st.success(f"✅ Flow Diagram → {diagram_result['diagram_path']}")
+                    else:
+                        st.warning(f"⚠️ Diagram generation failed: {diagram_result.get('error')}")
+
+                except Exception as e:
+                    logger.warning(f"Diagram generation error: {e}")
+                    st.warning(f"⚠️ Diagram generation skipped: {str(e)[:100]}")
+
             else:
                 st.warning(f"⚠️ GraphFlow generation failed: {graphflow_result.get('error')}")
         else:
