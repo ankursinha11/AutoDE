@@ -1,0 +1,164 @@
+1. Receive Notification
+
+Get notification and validate it.
+
+2. Check Notification Decision
+
+If valid → continue
+
+If invalid → stop
+
+3. Audit Input Files
+
+Verify all required files are present.
+
+4. Check Audit Decision
+
+If audit passes → continue
+
+If audit fails → stop
+
+5. Merge & Pre-processing
+
+Perform merge steps.
+
+Run initial matching (Match1).
+
+Extract/prepare policy information.
+
+6. CM2 Matching (Sequential Passes)
+
+Run CM2 matching in multiple passes:
+
+Match Pass 1
+
+Match Pass 2
+
+Match Pass 3
+
+Match Pass 4
+
+Match Pass 5
+
+Match Pass 6
+
+7. Consolidate Results
+
+Combine all CM2 matching outputs.
+
+8. Handle Missing IDs
+
+Publish missing PA IDs.
+
+9. Prepare Output Package
+
+Build ES package for upload.
+
+10. Upload to DEG
+
+Upload final results.
+
+11. Update Final Logs
+
+Log notification status.
+
+Update notification state.
+
+12. Cleanup
+
+Remove old/temp data.
+
+13. End
+✅ Simplified Mermaid Diagram
+flowchart TD
+    Start([Start]) --> Notify[Receive & Validate Notification]
+    Notify --> NotifyDecision{Valid?}
+    NotifyDecision -- No --> End1([Stop])
+    NotifyDecision -- Yes --> Audit[Audit Input Files]
+
+    Audit --> AuditDecision{Audit Pass?}
+    AuditDecision -- No --> End1
+    AuditDecision -- Yes --> Merge[Merge & Initial Processing]
+
+    Merge --> CM2[CM2 Matching (6 Passes)]
+    CM2 --> Consolidate[Consolidate Matches]
+    Consolidate --> MissingIDs[Handle Missing IDs]
+    MissingIDs --> Package[Prepare Output Package]
+    Package --> Upload[Upload to DEG]
+    Upload --> Log[Update Logs & Status]
+    Log --> Cleanup[Cleanup]
+    Cleanup --> End2([End])
+
+
+If you want an even shorter version or a swimlane version, just say so.
+
+You said:
+No I mean create boxes and arrows and then give
+ChatGPT said:
+
+Got it — a plain ASCII flow with boxes and arrows, no Mermaid, no extras.
+Here’s a clean, simplified version:
+
++----------------------+
+|   Receive Notify     |
++----------+-----------+
+           |
+           v
++----------------------+
+| Validate Notify?     |
++----+-----------+-----+
+     |           |
+   No|           |Yes
+     v           v
+ [ STOP ]   +----------------------+
+            |   Audit Files        |
+            +----------+-----------+
+                       |
+                       v
+            +----------------------+
+            |   Audit Pass?        |
+            +----+-----------+-----+
+                 |           |
+               No|           |Yes
+                 v           v
+             [ STOP ]   +----------------------+
+                        | Merge & Preprocess   |
+                        +----------+-----------+
+                                   |
+                                   v
+                        +----------------------+
+                        |  CM2 Matching (6x)   |
+                        +----------+-----------+
+                                   |
+                                   v
+                        +----------------------+
+                        |  Consolidate Results |
+                        +----------+-----------+
+                                   |
+                                   v
+                        +----------------------+
+                        |   Handle Missing IDs |
+                        +----------+-----------+
+                                   |
+                                   v
+                        +----------------------+
+                        |   Prepare Package    |
+                        +----------+-----------+
+                                   |
+                                   v
+                        +----------------------+
+                        |   Upload to DEG      |
+                        +----------+-----------+
+                                   |
+                                   v
+                        +----------------------+
+                        | Update Logs/Status   |
+                        +----------+-----------+
+                                   |
+                                   v
+                        +----------------------+
+                        |       Cleanup        |
+                        +----------+-----------+
+                                   |
+                                   v
+                               [ END ]
