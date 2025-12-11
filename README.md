@@ -23,3 +23,76 @@ The pipeline performs the same candidate selection. It reads patient accounts, a
 Column 4 (Review/Comments):
 ⚠ Review - Multiple differences: (1) Additional DOD filter in Databricks includes accounts where dod.isNotNull(), increasing data volume. (2) Time window difference: When lead_mode=1, Hadoop uses 3 days (hardcoded) vs Databricks uses 90 days (configurable default), processing significantly more accounts. (3) AID module support is new functionality in Databricks.
 ⚠ Review - Multiple differences: (1) Additional DOD filter in Databricks includes accounts where dod.isNotNull(), increasing data volume. (2) Time window difference: When lead_mode=1, Hadoop uses 3 days (hardcoded) vs Databricks uses 90 days (configurable default), processing significantly more accounts. (3) AID module support is new functionality in Databricks.
+
+
+
+
+
+
+
+
+
+
+MEDICARE LEADS PIPELINE - FLOW DIAGRAM
+========================================
+
+Data Flow Diagram - Databricks                    |  Data Flow Diagram - Hadoop
+---------------------------------------------------|---------------------------------------------------
+1. Get Notification & Initialize                   |  1. Get Notification & Initialize
+   (update_notification_inprogress activity)       |     (get_notification action executes get_notification.py)
+                                                   |
+2. Log Workflow Start                              |  2. Log Workflow Start
+   (360_logger_v1_Running activity)               |     (check_previous_wf_status action executes oozie_wf_checker.py)
+                                                   |     (restart_previous_failed_wf action executes oozie_wf_runner.sh)
+                                                   |     (check_notification action executes check_notification_v3.0.sh)
+                                                   |     (get_date action executes get_datetime.sh)
+                                                   |
+3. Create Admit Date Lookup                       |  3. Create Admit Date Lookup
+   (mcare_createlookup_maxminadmitdays activity    |     (get_minmaxdt action executes 
+    executes mcare_createlookup_maxminadmitdays.py)|      mcare_createlookup_maxminadmitdays.py)
+                                                   |
+4. Get Candidate Patient Accounts                 |  4. Get Candidate Patient Accounts
+   (mcare_get_candidate_patientaccts activity      |     (get_candidate_patientaccts action executes
+    executes mcare_get_candidate_patientaccnts.py) |      mcare_get_candidate_patientaccts.py)
+                                                   |
+5. Process CPA-LSB Cross-Table                    |  5. Process CPA-LSB Cross-Table
+   (mcare_process_cpa_lsb_xtable activity         |     (process_cpa_lsb_xtable action executes
+    executes cpa_lsb_xtable_medicare.py)          |      cpa_lsb_xtable_medicare.py)
+                                                   |
+6. Lead Lookup by Identity (Parallel)             |  6. Lead Lookup by Identity (Parallel Fork)
+   (mcare_process_globalmrnifk activity           |     (process_globalmrnifk_leadlookup action executes
+    executes LeadLookupByID.py with globalmrnifk) |      run_leadlookup.sh with globalmrnifk)
+   (mcare_process_permid activity                 |     (process_permid_leadlookup action executes
+    executes LeadLookupByID.py with permid)        |      run_leadlookup.sh with permid)
+   (mcare_process_ssn activity                    |     (process_ssn_leadlookup action executes
+    executes LeadLookupByID.py with ssn)          |      run_leadlookup.sh with ssn)
+   (mcare__medicalrecnum activity                 |     (process_medicalrecnum_leadlookup action executes
+    executes LeadLookupByID.py with medicalrecnum)|      run_leadlookup.sh with medicalrecnum)
+   (mcare_process_clusteredacctfk activity        |     (process_clusteredacctfk_leadlookup action executes
+    executes LeadLookupByID.py with clusteredacctfk)|     run_leadlookup.sh with clusteredacctfk)
+                                                   |
+7. Process Leads                                  |  7. Process Leads
+   (mcare_process_leads activity                  |     (process_leads action executes
+    executes process_leads_medicare.py)           |      process_leads_medicare.py)
+                                                   |
+8. Check Leads & Export                           |  8. Check Leads & Export
+   (Check whether process lead output exist       |     (hdfs_dir_check action executes hdfs_dir_check.sh)
+    or not activity checks output directory)      |     (check_leads action executes check_leads.py)
+   (mcare_check_leads activity                    |     (hdfs_dir_check_leads action executes hdfs_dir_check.sh)
+    executes check_leads.py)                     |     (sqoop_out action executes Sqoop export to
+   (mcare_sqoop_out activity                      |      hdppatientacctxlead table)
+    executes sqoop_out.py via JDBC)               |     (sqoop_out_hdpbatch action executes Sqoop export to
+                                                   |      hdppatientacctxleadbatch table)
+                                                   |
+9. Database Sharding                              |  9. (Not present in Hadoop)
+   (db_sharding activity                          |
+    executes db_sharding_to_adls.py)              |
+   (db_sharding_move activity                     |
+    executes db_sharding_move.py)                 |
+                                                   |
+10. Update Notification & Cleanup                |  10. Update Notification & Cleanup
+    (update_notification_completed activity)       |      (update_notification action executes update_notification.py)
+    (delete_trigger_file activity)                |      (log_maprdb_success action executes lr_logfailure.py)
+                                                   |      (log_notification action executes notification_log.sh)
+                                                   |      (email_notify action sends email notification)
+                                                   |      (purge_intermediate_data action executes delete_bcdata.sh)
