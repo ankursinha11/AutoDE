@@ -12,3 +12,14 @@ DOD filter: Additional in Databricks — increases data volume
 Time window: 3 days (Hadoop) vs 90 days default (Databricks) — increases data volume
 AID module: New in Databricks — separate functionality, no impact on regular processing
 Copy and paste these into your Excel sheet as needed.
+Candidate Patient Account Selection - Complete Row:
+Column 1 (Stage Name):
+Stage 3: Candidate Patient Account Selection
+Stage 3: Candidate Patient Account Selection
+Column 2 (Hadoop Logic):
+The workflow identifies candidate patient accounts that are eligible for Medicare lead processing. It reads patient accounts from Delta Lake, filters for accounts with total charges > 0, applies admit date filters using the lookup tables, and filters for accounts where hasmedicareflag = 0 (accounts not yet processed for Medicare). When lead_mode_flag='1', it filters patient accounts based on trgupdatedate or vsnapflags_createdate >= enddt where enddt is hardcoded to 3 days (date_sub(current_date(), 3)). It then enriches accounts with Global MRN and PermId from reference data, validates identities, and writes candidate accounts to output.
+Column 3 (Databricks Logic):
+The pipeline performs the same candidate selection. It reads patient accounts, applies the same filters (total charges > 0, admit date ranges, hasmedicareflag = 0). Additionally, it includes accounts where DOD (date of death) is not null. When lead_mode_flag='1', it filters patient accounts based on trgupdatedate or vsnapflags_createdate >= enddt where enddt uses a configurable parameter num_of_days that defaults to 90 days (date_sub(current_date(), int(num_of_days))) instead of Hadoop's hardcoded 3 days. It enriches with Global MRN and PermId, validates identities, and writes candidates. The pipeline also supports an 'aid' module mode for AID-specific patient account processing.
+Column 4 (Review/Comments):
+⚠ Review - Multiple differences: (1) Additional DOD filter in Databricks includes accounts where dod.isNotNull(), increasing data volume. (2) Time window difference: When lead_mode=1, Hadoop uses 3 days (hardcoded) vs Databricks uses 90 days (configurable default), processing significantly more accounts. (3) AID module support is new functionality in Databricks.
+⚠ Review - Multiple differences: (1) Additional DOD filter in Databricks includes accounts where dod.isNotNull(), increasing data volume. (2) Time window difference: When lead_mode=1, Hadoop uses 3 days (hardcoded) vs Databricks uses 90 days (configurable default), processing significantly more accounts. (3) AID module support is new functionality in Databricks.
