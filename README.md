@@ -1,10 +1,170 @@
-WHAT TO COPY-PASTE:
-Replace the current Step 6 row with this:
-Step 6 | Processes leads through filtering pipeline: data cleaning (null removal, EDI partner 182→101 merge, state length fix), blacklist filter, coverage ID/admit date filters, EDI partner config check, HPN filter, min charges filter, Family Coverage filter, walling-off, adds edidatasourcefk from lookup table (maps ICH, FC, CHC, FM only), best lead selection. | Processes leads through filtering pipeline: same data cleaning, same blacklist, same coverage ID/admit date filters, same EDI partner config check, same HPN filter, same min charges filter, same Family Coverage filter, same walling-off, adds edidatasourcefk from same lookup table (maps ICH, FC, CHC, FM, AND HFC - Helper Found Coverage with lsb_xrefsourcevalue='GH'). Supports 'aid' module. | ⚠ Review | Same filtering logic. Both map edidatasourcefk from lookup table. CRITICAL DIFFERENCE: Databricks includes HFC (Helper Found Coverage) mapping which processes additional leads with lsb_xrefsourcevalue='GH' that Hadoop does not process. This means Databricks reads and processes more leads from Lead Service Base than Hadoop. Impact: Databricks generates more leads and exports more records to SQL Server staging tables.
-Also update Gap #2 (already exists, but make it clearer):
-Current Gap #2 text (line 634) - replace with:
-Gap #2 | Databricks includes HFC (Helper Found Coverage) mapping in edidatasourcefk lookup. Hadoop only maps ICH, FC, CHC, and FM. Databricks additionally processes HFC leads (filtered by lsb_xrefsourcevalue='GH') which are loaded into Lead Service Base from HFC import pipeline (pl_hfc_import → pl_leadservicebase_hfc). This means Databricks processes additional leads that exist in LSB but are skipped by Hadoop. | process_leads step (addedidatasourcefk function) | MEDIUM | Hadoop (line 478-490): Maps ICH, FC, CHC, FM only. Databricks (line 287-303): Maps ICH, FC, CHC, FM, and HFC (all_leads_hfc filter for lsb_xrefsourcevalue='GH'). Impact: Databricks reads additional HFC leads from Lead Service Base, assigns edidatasourcefk via lookup table, and exports more leads to SQL Server. This increases data volume and provides more complete coverage discovery.
-Summary:
-Step 6: Change status from "✓ Match" to "⚠ Review" and add HFC details
-Gap #2: Update description to clarify HFC processing and impact
-This makes the HFC difference clear in the Logic Comparison sheet.
+1. LeadLookup (Commercial) - Hadoop vs Databricks
+
+### Hadoop: leaddiscovery: leadlookup:
+```
+START
+  ↓
+1. Check Previous WF Status
+  ↓
+2. Restart Previous Failed WF (if needed)
+  ↓
+3. Get Notification (from MapR DB)
+  ↓
+4. Check Notification
+  ↓
+5. Get Date/Time
+  ↓
+6. Oozie 360 Log Start
+  ↓
+7. Get Min/Max Admit Dates (Create Lookup)
+  ↓
+8. Get Candidate Patient Accounts
+  ↓
+9. Process CPA-LSB Cross-Table
+  ↓
+10. FORK: Parallel Lead Lookups (Group 1)
+    ├─→ Process GlobalMRN LeadLookup (Java JAR)
+    └─→ Process PermId LeadLookup (Java JAR)
+  ↓
+11. FORK: Parallel Lead Lookups (Group 2)
+    ├─→ Process SSN LeadLookup (Java JAR)
+    ├─→ Process MedicalRecNum LeadLookup (Java JAR)
+    └─→ Process ClusteredAcctFK LeadLookup (Java JAR)
+  ↓
+12. Merge CPA x Leads
+  ↓
+13. Process Leads
+  ↓
+14. HDFS Dir Check
+  ↓
+15. Check Leads (if data exists)
+  ↓
+16. HDFS Dir Check Leads
+  ↓
+17. Sqoop Out (to SQL Server)
+  ↓
+18. Sqoop Out HDPBatch
+  ↓
+19. Update Notification
+  ↓
+20. FORK: Final Steps
+    ├─→ Log Notification
+    ├─→ Email Notify Success
+    ├─→ Purge Intermediate Data
+    └─→ Oozie 360 Log Finish
+  ↓
+END
+```
+
+### Databricks: pl_leaddiscovery_globalmrn_assign
+```
+START
+  ↓
+1. Set Workflow Type (regular)
+  ↓
+2. Set Notification Type (globalmrn_assign)
+  ↓
+3. Get Breadcrumb (from Cosmos DB)
+  ↓
+4. Set Breadcrumb
+  ↓
+5. FORK: Initial Setup
+    ├─→ 360 Logger Running
+    └─→ Update Notification InProgress
+  ↓
+6. Get Min/Max Admit Dates (Create Lookup)
+  ↓
+7. Get Candidate Patient Accounts
+  ↓
+8. LSB Lookup (Optimized - all identity types)
+  ↓
+9. Process Leads
+  ↓
+10. Check If Process Lead Output Exists
+    ├─→ YES: Check Leads
+    │     ↓
+    │   Check If Leads Exist
+    │     ├─→ YES: Sqoop Out (to SQL Server)
+    │     └─→ NO: Skip
+    └─→ NO: Skip
+  ↓
+11. Delete Trigger File
+  ↓
+12. Update Notification Completed
+  ↓
+END
+```
+
+---
+
+## 2. ESCAN Import FC - Hadoop vs Databricks
+
+### Hadoop: leadrepository: escan_import_fc
+```
+START
+  ↓
+1. Check Previous WF Status
+  ↓
+2. Restart Previous Failed WF (if needed)
+  ↓
+3. Get Notification (from MapR DB)
+  ↓
+4. Check Notification
+  ↓
+5. Get Date/Time
+  ↓
+6. Oozie 360 Log Start
+  ↓
+7. Parse FC Transaction Demo (Main Processing)
+    - Read FoundCoverage data
+    - Join with EDIQueries, HitStatus
+    - Filter and transform
+    - Write to lr_transaction (cooked)
+    - Write to toserve path
+  ↓
+8. Create Notification FC XRef
+  ↓
+9. FORK: Final Steps
+    ├─→ Oozie 360 Log Finish
+    ├─→ Log Notification
+    ├─→ Update Notification
+    └─→ Email Notify Success
+  ↓
+END
+```
+
+### Databricks: pl_leadrepo_escan_import_fc
+```
+START
+  ↓
+1. Lookup for trange and fc_source_key (from config JSON)
+  ↓
+2. FORK: Set Variables
+    ├─→ Set trange
+    └─→ Set fc_source_key
+  ↓
+3. Get Breadcrumb (from Cosmos DB)
+  ↓
+4. Set Breadcrumb
+  ↓
+5. FORK: Initial Setup
+    ├─→ 360 Logger Running
+    └─→ Update Notification InProgress
+  ↓
+6. Reconcile LeadRepo Transaction Demo (Main Processing)
+    - Read FoundCoverage data
+    - Join with EDIQueries, HitStatus
+    - Filter and transform
+    - Write to lr_transaction (cooked)
+    - Write to toserve path
+  ↓
+7. Log Notification LeadRepo FC XRef
+  ↓
+8. Create Trigger File FC XRef
+  ↓
+9. Delete Trigger File
+  ↓
+10. Update Notification Completed
+  ↓
+END
+```
