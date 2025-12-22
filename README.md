@@ -1,170 +1,68 @@
-1. LeadLookup (Commercial) - Hadoop vs Databricks
+# ========================================
+# ENHANCED RAG SYSTEM REQUIREMENTS
+# Azure OpenAI + ChromaDB + LangGraph + Advanced Retrieval
+# ========================================
 
-### Hadoop: leaddiscovery: leadlookup:
-```
-START
-  ↓
-1. Check Previous WF Status
-  ↓
-2. Restart Previous Failed WF (if needed)
-  ↓
-3. Get Notification (from MapR DB)
-  ↓
-4. Check Notification
-  ↓
-5. Get Date/Time
-  ↓
-6. Oozie 360 Log Start
-  ↓
-7. Get Min/Max Admit Dates (Create Lookup)
-  ↓
-8. Get Candidate Patient Accounts
-  ↓
-9. Process CPA-LSB Cross-Table
-  ↓
-10. FORK: Parallel Lead Lookups (Group 1)
-    ├─→ Process GlobalMRN LeadLookup (Java JAR)
-    └─→ Process PermId LeadLookup (Java JAR)
-  ↓
-11. FORK: Parallel Lead Lookups (Group 2)
-    ├─→ Process SSN LeadLookup (Java JAR)
-    ├─→ Process MedicalRecNum LeadLookup (Java JAR)
-    └─→ Process ClusteredAcctFK LeadLookup (Java JAR)
-  ↓
-12. Merge CPA x Leads
-  ↓
-13. Process Leads
-  ↓
-14. HDFS Dir Check
-  ↓
-15. Check Leads (if data exists)
-  ↓
-16. HDFS Dir Check Leads
-  ↓
-17. Sqoop Out (to SQL Server)
-  ↓
-18. Sqoop Out HDPBatch
-  ↓
-19. Update Notification
-  ↓
-20. FORK: Final Steps
-    ├─→ Log Notification
-    ├─→ Email Notify Success
-    ├─→ Purge Intermediate Data
-    └─→ Oozie 360 Log Finish
-  ↓
-END
-```
+# ============================================
+# Core Dependencies (from original requirements.txt)
+# ============================================
 
-### Databricks: pl_leaddiscovery_globalmrn_assign
-```
-START
-  ↓
-1. Set Workflow Type (regular)
-  ↓
-2. Set Notification Type (globalmrn_assign)
-  ↓
-3. Get Breadcrumb (from Cosmos DB)
-  ↓
-4. Set Breadcrumb
-  ↓
-5. FORK: Initial Setup
-    ├─→ 360 Logger Running
-    └─→ Update Notification InProgress
-  ↓
-6. Get Min/Max Admit Dates (Create Lookup)
-  ↓
-7. Get Candidate Patient Accounts
-  ↓
-8. LSB Lookup (Optimized - all identity types)
-  ↓
-9. Process Leads
-  ↓
-10. Check If Process Lead Output Exists
-    ├─→ YES: Check Leads
-    │     ↓
-    │   Check If Leads Exist
-    │     ├─→ YES: Sqoop Out (to SQL Server)
-    │     └─→ NO: Skip
-    └─→ NO: Skip
-  ↓
-11. Delete Trigger File
-  ↓
-12. Update Notification Completed
-  ↓
-END
-```
+# Data processing (for Excel outputs)
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
 
----
+# Azure OpenAI (for GPT-4 and embeddings)
+openai>=1.0.0
 
-## 2. ESCAN Import FC - Hadoop vs Databricks
+# Local Vector Database
+chromadb>=0.4.0
+sentence-transformers>=2.2.0  # FREE local embeddings
 
-### Hadoop: leadrepository: escan_import_fc
-```
-START
-  ↓
-1. Check Previous WF Status
-  ↓
-2. Restart Previous Failed WF (if needed)
-  ↓
-3. Get Notification (from MapR DB)
-  ↓
-4. Check Notification
-  ↓
-5. Get Date/Time
-  ↓
-6. Oozie 360 Log Start
-  ↓
-7. Parse FC Transaction Demo (Main Processing)
-    - Read FoundCoverage data
-    - Join with EDIQueries, HitStatus
-    - Filter and transform
-    - Write to lr_transaction (cooked)
-    - Write to toserve path
-  ↓
-8. Create Notification FC XRef
-  ↓
-9. FORK: Final Steps
-    ├─→ Oozie 360 Log Finish
-    ├─→ Log Notification
-    ├─→ Update Notification
-    └─→ Email Notify Success
-  ↓
-END
-```
+# Code parsing (Ab Initio, Hadoop, Databricks)
+lxml>=4.9.0
+xmltodict>=0.13.0
+pyyaml>=6.0
 
-### Databricks: pl_leadrepo_escan_import_fc
-```
-START
-  ↓
-1. Lookup for trange and fc_source_key (from config JSON)
-  ↓
-2. FORK: Set Variables
-    ├─→ Set trange
-    └─→ Set fc_source_key
-  ↓
-3. Get Breadcrumb (from Cosmos DB)
-  ↓
-4. Set Breadcrumb
-  ↓
-5. FORK: Initial Setup
-    ├─→ 360 Logger Running
-    └─→ Update Notification InProgress
-  ↓
-6. Reconcile LeadRepo Transaction Demo (Main Processing)
-    - Read FoundCoverage data
-    - Join with EDIQueries, HitStatus
-    - Filter and transform
-    - Write to lr_transaction (cooked)
-    - Write to toserve path
-  ↓
-7. Log Notification LeadRepo FC XRef
-  ↓
-8. Create Trigger File FC XRef
-  ↓
-9. Delete Trigger File
-  ↓
-10. Update Notification Completed
-  ↓
-END
-```
+# Graph analysis (for data lineage)
+networkx>=3.1
+
+# Utilities
+python-dotenv>=1.0.0  # For .env file
+tqdm>=4.66.0          # Progress bars
+loguru>=0.7.0         # Logging
+
+# STAG UI (Streamlit frontend)
+streamlit>=1.28.0
+
+# Document parsing (for PDF/Excel/DOCX indexing)
+pdfplumber>=0.10.0
+python-docx>=1.0.0
+
+# ============================================
+# NEW ENHANCED RAG DEPENDENCIES
+# ============================================
+
+# LangGraph - Multi-agent workflow orchestration
+langgraph>=0.2.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
+langchain-community>=0.3.0
+
+# Hybrid Search - BM25 + Semantic
+rank-bm25>=0.2.2
+
+# Reranking - Cross-encoder for better relevance
+# Note: sentence-transformers already included above (v2.2.0+)
+# Cross-encoder models use sentence-transformers
+
+# Query Understanding
+rapidfuzz>=3.0.0  # Fast fuzzy string matching for query expansion
+
+# Code Analysis
+tree-sitter>=0.20.0  # For advanced code parsing
+tree-sitter-python>=0.20.0
+tree-sitter-java>=0.20.0
+
+# Additional utilities
+tiktoken>=0.5.0  # Token counting for context management
