@@ -251,6 +251,23 @@ def initialize_rag_components():
                     vector_store=None  # Not using vector_store directly
                 )
 
+                # ============================================
+                # ENHANCED RAG WORKFLOW (LangGraph)
+                # ============================================
+                try:
+                    from services.langgraph.workflow import RAGWorkflow
+
+                    st.session_state.rag_workflow = RAGWorkflow(
+                        ai_analyzer=st.session_state.ai_analyzer,
+                        indexer=st.session_state.indexer,
+                        vector_search_client=None
+                    )
+                    logger.info("✓ Enhanced RAG Workflow (LangGraph) initialized")
+                    st.session_state.use_enhanced_rag = True
+                except Exception as e:
+                    logger.warning(f"Enhanced RAG not available: {e}")
+                    st.session_state.use_enhanced_rag = False
+
                 # Get initial stats
                 st.session_state.stats = st.session_state.indexer.get_stats()
 
@@ -269,6 +286,29 @@ def render_sidebar():
     """Render sidebar with configuration and controls"""
 
     st.sidebar.title("🚀 STAG Configuration")
+
+    # RAG Engine Selection
+    st.sidebar.subheader("🔬 RAG Engine")
+
+    # Check if enhanced RAG is available
+    if st.session_state.get('rag_workflow'):
+        use_enhanced = st.sidebar.checkbox(
+            "Use Enhanced RAG (LangGraph)",
+            value=st.session_state.get('use_enhanced_rag', True),
+            help="Enable LangGraph workflow with conversation memory, hybrid search, and file reading"
+        )
+        st.session_state.use_enhanced_rag = use_enhanced
+
+        if use_enhanced:
+            st.sidebar.success("✅ Enhanced RAG Active")
+            st.sidebar.caption("Features: Hybrid Search, Conversation Memory, File Reading, Code Analysis")
+        else:
+            st.sidebar.info("ℹ️ Standard RAG Active")
+    else:
+        st.sidebar.warning("⚠️ Standard RAG Only")
+        st.sidebar.caption("Enhanced RAG not available")
+
+    st.sidebar.divider()
 
     # Model selection
     st.sidebar.subheader("🤖 AI Model")
@@ -537,8 +577,96 @@ def render_chat_interface():
             render_streaming_response(prompt)
 
 
+def render_enhanced_rag_response(query: str):
+    """Render response using Enhanced RAG Workflow (LangGraph)"""
+
+    from datetime import datetime
+
+    # Get or create session ID
+    if 'session_id' not in st.session_state:
+        st.session_state.session_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+    # Show processing indicator
+    with st.spinner("🔍 Processing with Enhanced RAG (LangGraph)..."):
+        try:
+            # Process query through RAG workflow
+            result = st.session_state.rag_workflow.query(
+                query=query,
+                session_id=st.session_state.session_id
+            )
+
+            # Display response
+            st.markdown(result.get("response", "No response generated"))
+
+            # Display confidence score
+            confidence = result.get("confidence_score", 0.0)
+            if confidence > 0:
+                st.metric("Confidence", f"{confidence:.0%}")
+
+            # Display evidence sources
+            evidence = result.get("evidence", [])
+            if evidence:
+                with st.expander(f"📚 Evidence Sources ({len(evidence)} found)"):
+                    for i, ev in enumerate(evidence, 1):
+                        file_path = ev.get('file_path', 'Unknown')
+                        relevance = ev.get('relevance_score', 0.0)
+                        st.markdown(f"**{i}. {file_path}** (Relevance: {relevance:.2%})")
+
+                        # Show code snippet if available
+                        snippet = ev.get('content_snippet')
+                        if snippet:
+                            st.code(snippet, language="sql")
+
+            # Display metadata
+            metadata = result.get("metadata", {})
+            if metadata:
+                with st.expander("ℹ️ Query Processing Details"):
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.metric("Intent", metadata.get('intent', 'N/A'))
+
+                    with col2:
+                        systems = metadata.get('systems', [])
+                        st.metric("Systems", len(systems))
+                        if systems:
+                            st.caption(", ".join(systems))
+
+                    with col3:
+                        files = metadata.get('files_analyzed', 0)
+                        st.metric("Files Analyzed", files)
+
+            # Add to session state messages
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": result.get("response", "No response"),
+                "metadata": {
+                    "confidence": confidence,
+                    "evidence": evidence,
+                    "query_metadata": metadata,
+                    "timestamp": datetime.now().isoformat(),
+                    "engine": "Enhanced RAG (LangGraph)"
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Enhanced RAG error: {e}")
+            st.error(f"Error processing query: {e}")
+            # Fallback to old orchestrator
+            st.warning("Falling back to standard orchestrator...")
+            st.session_state.use_enhanced_rag = False
+            render_streaming_response(query)
+
+
 def render_streaming_response(query: str):
     """Render response with streaming agent updates"""
+
+    # ============================================
+    # USE ENHANCED RAG WORKFLOW IF AVAILABLE
+    # ============================================
+    if st.session_state.get('use_enhanced_rag', False) and st.session_state.get('rag_workflow'):
+        render_enhanced_rag_response(query)
+        return
 
     # All queries now go through the orchestrator which has intelligent routing
     # The orchestrator will automatically detect workflow mapping queries and use the appropriate handler
