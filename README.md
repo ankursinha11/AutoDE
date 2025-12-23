@@ -1,240 +1,298 @@
-D-14.dml', 'lkpPatientAcctsXRefPermID-31.dml', 'lkpPatientAcctsXRefPermIDJoin-15.dml', 'lkpPatientAcctsXRefPermIDJoin-32.dml', 'lkpPayerPrefixByState-19.dml', 'lkpStateCountByPayer-20.dml', 'lkpVSnapGlobalMRNxPacct-16.dml', 'lkpVSnapGlobalMRNxPacct-33.dml', 'lkpediGenEDIDataSources-21.dml', 'mCareUserDefinedFunctions.xfr', 'mCareUserDefinedTypes.dml', 'patbg.dml', 'vSnapGlobalMRNFamilyHelperAccounts.dml', 'vSnapGlobalMRNFamilyHelperAccounts_Deleted.dml', 'vSnapGlobalMRNxHospInsuranceCodes.dml', 'vSnapGlobalMRNxHospInsuranceCodes_Deleted.dml', 'vSnapGlobalMRNxPacct.dml', 'vSnapGlobalMRNxPacct_Deleted.dml', 'vwEDIAbiLeadSourceTransitionToICD.dml', 'vwEDIAbiLeadSourceTransitionToICD_Deleted.dml', 'vwEDILeadSourceTransition.dml']
+ Initializing STAG Orchestrator...
+2025-12-23 18:34:48.663 | INFO     | services.stag.system_mapping_service:load_mappings:48 - ✅ Loaded 44 system mappings (30 Hadoop, 14 Ab Initio)
+2025-12-23 18:34:48.664 | INFO     | services.stag.abinitio_logic_extractor:__init__:61 - ✅ VM_Automation integrated for AbInitio STTM generation
+2025-12-23 18:34:48.665 | INFO     | services.stag.stag_orchestrator:__init__:62 - ✅ STAG Orchestrator initialized
+2025-12-23 18:34:48.665 | INFO     | services.stag.abinitio_databricks_fast_comparison:__init__:40 - ✅ Ab Initio ↔ Databricks Fast Comparison Service initialized
+2025-12-23 18:34:48.665 | INFO     | services.chat.chat_orchestrator:__init__:118 - ChatOrchestrator initialized with 5 specialized agents + LogicComparator + Codebase Copilot + Document Tools + STAG Orchestrator + Fast Ab Initio Comparison
+2025-12-23 18:34:51.325 | INFO     | services.retrieval.query_rewriter:__init__:56 - Initialized QueryRewriter
+2025-12-23 18:34:51.326 | INFO     | services.retrieval.reranker:__init__:68 - Loading cross-encoder model: cross-encoder/ms-marco-MiniLM-L-6-v2
+2025-12-23 18:34:52.574 | INFO     | services.retrieval.reranker:__init__:70 - Cross-encoder loaded successfully
+2025-12-23 18:34:52.575 | INFO     | services.analysis.file_reader:__init__:151 - Initialized FileReader (max: 10MB, 10000 lines)
+2025-12-23 18:34:52.575 | INFO     | services.analysis.code_analyzer:__init__:93 - Initialized CodeAnalyzer
+2025-12-23 18:34:52.587 | INFO     | services.langgraph.workflow:_build_graph:131 - Built LangGraph workflow with 5 nodes
+2025-12-23 18:34:52.588 | INFO     | services.langgraph.workflow:__init__:91 - Initialized RAGWorkflow
+2025-12-23 18:34:52.589 | INFO     | __main__:initialize_rag_components:265 - ✓ Enhanced RAG Workflow (LangGraph) initialized
+2025-12-23 18:35:01.731 | INFO     | __main__:initialize_rag_components:274 - ✓ STAG RAG components initialized
+2025-12-23 18:35:02.544 Please replace `use_container_width` with `width`.
 
+`use_container_width` will be removed after 2025-12-31.
 
-================================================================================      
-STEP 2: EMBED DML/XFR FILES (HIERARCHICAL PROCESSING)
-================================================================================      
-
-📖 Loading: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_detailed_graph1.json      
-✅ Loaded successfully!
-
-🔄 Starting hierarchical processing (deepest level first)...
-
-
-============================================================
-📊 Graph 1: 1500_CDD_TUSourcedFamilyMemberLink (Level 0)
-============================================================
-
-🔄 Processing Graph 1...
-   Vertices: 584
-   🤖 Calling GPT-5 to extract files from Graph 1...
-   📄 Found 4 unique file(s): ['log-info.dml', 'Hospitals.dml', 'ediHFCPropagationUserDefinedTypes.dml', 'error-info.dml']
-      ⚠️  log-info.dml NOT FOUND in data/ folder
-      ✅ Hospitals.dml (content embedded)
-      ✅ ediHFCPropagationUserDefinedTypes.dml (content embedded)
-      ⚠️  error-info.dml NOT FOUND in data/ folder
-   ✅ Embedded 2 file(s) at graph level
-
-✅ Graph 1 processing complete!
-
-================================================================================      
-💾 Saving to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_detailed_graph1_with_files.json
-✅ Saved successfully! File size: 277.40 KB
-
-================================================================================      
-📊 SUMMARY
-================================================================================      
-Total file references embedded: 2
-Output file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_detailed_graph1_with_files.json
-================================================================================      
-
-✅ STEP 2 COMPLETE!
-
-2025-11-21 21:15:28.174 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_run_step2:271 - Step 2 complete: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_detailed_graph1_with_files.json
-2025-11-21 21:15:28.174 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:generate_sttm_from_parsed_json:110 - Step 3: Generating STTM mapping with GPT-5... 
-🔧 Using STAG's AI analyzer for STTM generation...
-✅ AI analyzer initialized
-
-
-╔════════════════════════════════════════════════════════════════════════════╗        
-║    STEP 3: SOURCE-TO-TARGET ATTRIBUTE MAPPING GENERATOR (HYBRID)          ║
-║                                                                            ║        
-║  Processing Strategy:                                                      ║        
-║    - Phase 0: DML Optimization (LLM identifies required sections)         ║
-║    - Phase 1: Load graph data & build dependency tree                     ║
-║    - Phase 2: Extract detailed functional logic from subgraphs            ║
-║    - Phase 2.5: Identify all output components (LLM-driven)               ║
-║    - Phase 3: Process EACH output separately (one LLM call per output)    ║
-║    - Phase 4: Generate Excel with all outputs                             ║
-║  Flow: SOURCE → TARGET (trace forward from inputs to outputs)             ║
-║  Output: Excel file with detailed attribute-level mapping + datatypes      ║        
-╚════════════════════════════════════════════════════════════════════════════╝        
-
-
-================================================================================      
-PHASE 1: LOAD GRAPH DATA & BUILD DEPENDENCY TREE
-================================================================================      
-📖 Loading graph data from: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_detailed_graph1_with_files.json
-✅ Loaded successfully!
-
-📊 Main Graph: 1500_CDD_TUSourcedFamilyMemberLink (ID: 1)
-📊 Total graphs in hierarchy: 1
-📊 Subgraphs to process: 0
-   Processing order: []
-
-         Extract: detailed functional logic (inputs, transformations, outputs)
-================================================================================
-
-💾 Saving subgraph logic to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_subgraph_logic_optimized.json
-✅ Saved successfully! File size: 0.00 KB
-
-================================================================================
-PHASE 3: PROCESS MAIN GRAPH (HYBRID OPTIMIZATION)
-         - DML reduction to required sections only
-         - Identify all outputs dynamically
-         - Generate mapping for each output separately
-================================================================================
-
-================================================================================
-🎯 Processing Main Graph 1: 1500_CDD_TUSourcedFamilyMemberLink
-================================================================================
-   ⏳ Waiting 60 seconds to avoid rate limit...
-
-================================================================================
-📦 PHASE 0: CONTEXT-AWARE DML OPTIMIZATION
-================================================================================
-   📊 Original referenced files: 2 files
-   📏 Original DML content size: 69,243 characters
-   🤖 Asking LLM to identify required DML sections...
-   📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\dml_optimization_response.txt
-   📊 Response length: 3553 characters
-   ✓ Attempting to parse entire response as JSON
-   ⚠️  JSON parse error: Unterminated string starting at: line 72 column 11 (char 3543)
-   📄 First 500 chars of response: {
-  "required_sections": {
-    "ediHFCPropagationUserDefinedTypes.dml": [
-      {
-        "type_name": "typeTUSourcedFamilyMemberLinkStaging",
-        "required_fields": [
-          "decimal(\"\\x01\") hospitalfk1",
-          "decimal(\"\\x01\") patientacctifk1",
-          "decimal(\"\\x01\") hospitalfk2",
-          "decimal(\"\\x01\") patientacctifk2",
-          "string(1) newline = \"\\n\""
-        ]
-      },
-      {
-        "type_name": "typePatientAcctsXRefPermID",
-        "required_fields":
-   ✓ Attempting to extract JSON from position 0 to 2706
-   ⚠️  Failed to extract JSON: Expecting ',' delimiter: line 56 column 8 (char 2707)
-   ⚠️  Failed to identify required sections, using full DML content
-   ⏳ Waiting 60 seconds to avoid rate limit...
-
-================================================================================
-🔍 PHASE 2.5: IDENTIFY OUTPUT COMPONENTS
-================================================================================
-   🤖 Asking LLM to identify all outputs...
-   📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\identify_outputs_response.txt
-   📊 Response length: 395 characters
-   ✓ Attempting to parse entire response as JSON
-   ✅ Identified 2 output(s):
-      1. Output_File (ID: 567)
-      2. OFile_ediTUSourcedFamilyMemberLink.dat (ID: ds_4)
-
-================================================================================
-📋 PHASE 2.7: GENERATE MAIN GRAPH SUMMARY
-================================================================================
-   🤖 Calling GPT-5 LLM to generate graph summary...
-   📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\graph_summary_response.txt
-   📊 Response length: 1999 characters
-   ✓ Attempting to parse entire response as JSON
-   ✅ Graph summary generated successfully
-   ⏳ Waiting 60 seconds to avoid rate limit...
-
-================================================================================
-🔄 PHASE 3: GENERATE MAPPINGS FOR EACH OUTPUT
-================================================================================
-
-================================================================================
-📋 Processing Output 1/2: Output_File (ID: 567)
-================================================================================
-   📝 Prompt saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\output_1_prompt.txt (Length: 273,606 chars)
-   🤖 Calling GPT-5 LLM for attribute mapping...
-   📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\output_1_response.txt
-   📊 Response length: 4162 characters
-   ✓ Attempting to parse entire response as JSON
-   ⚠️  JSON parse error: Unterminated string starting at: line 75 column 27 (char 4161)
-   📄 First 500 chars of response: {
-  "output_name": "Output_File",
-  "output_component_id": "567",
-  "output_dataset": "$AI_MFS_TEMP/${fileNamePrefix}ediTUSourcedFamilyMemberLink.dat",
-  "mappings": [
-    {
-      "source_dataset": "Unknown (not enough information to identify specific input file)",
-      "source_component": "Unknown",
-      "source_component_id": "Unknown",
-      "source_attribute": "hospitalfk1",
-      "source_datatype": "decimal",
-      "target_dataset": "$AI_MFS_TEMP/${fileNamePrefix}ediTUSourcedFamilyMemberL
-   ✓ Attempting to extract JSON from position 0 to 4022
-   ⚠️  Failed to extract JSON: Unterminated string starting at: line 72 column 25 (char 3992)
-   ⚠️  Failed to parse mapping for Output_File
-   ⏳ Waiting 60 seconds to avoid rate limit...
-
-================================================================================
-📋 Processing Output 2/2: OFile_ediTUSourcedFamilyMemberLink.dat (ID: ds_4)
-================================================================================
-   📝 Prompt saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\output_2_prompt.txt (Length: 273,702 chars)
-   🤖 Calling GPT-5 LLM for attribute mapping...
-   📝 Raw response saved to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\output_2_response.txt
-   📊 Response length: 4455 characters
-   ✓ Attempting to parse entire response as JSON
-   ⚠️  JSON parse error: Unterminated string starting at: line 63 column 18 (char 4026)
-   📄 First 500 chars of response: {
-  "output_name": "OFile_ediTUSourcedFamilyMemberLink.dat",
-  "output_component_id": "ds_4",
-  "output_dataset": "OFile_ediTUSourcedFamilyMemberLink.dat",
-  "mappings": [
-    {
-      "source_dataset": "Unknown (not enough information in provided context to identify exact input file/component)",
-      "source_component": "Unknown",
-      "source_component_id": "Unknown",
-      "source_attribute": "hospitalfk1",
-      "source_datatype": "decimal",
-      "target_dataset": "OFile_ediTUSourcedFamily
-   ✓ Attempting to extract JSON from position 0 to 3439
-   ⚠️  Failed to extract JSON: Expecting ',' delimiter: line 50 column 6 (char 3440)
-   ⚠️  Failed to parse mapping for OFile_ediTUSourcedFamilyMemberLink.dat
-
-================================================================================
-✅ MAIN GRAPH PROCESSING COMPLETE
-   Total outputs processed: 2
-================================================================================
-
-💾 Saving final mapping to: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_final_mapping_optimized.json
-✅ Saved successfully! File size: 2.69 KB
-
-================================================================================
-PHASE 4: GENERATE EXCEL OUTPUT
-================================================================================
-
-📊 Generating Excel file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_source_to_target_mapping.xlsx
-   📄 Creating Summary sheet
-   📄 Creating sheet: Output_1_Output_File
-   ✅ Added 0 mapping entries
-   📄 Creating sheet: Output_2_OFile_ediTUSourcedFa
-   ✅ Added 0 mapping entries
-✅ Excel file saved! File size: 7.24 KB
-
-================================================================================
-📋 EXECUTION SUMMARY
-================================================================================
-Main Graph ID: 1
-Main Graph Name: 1500_CDD_TUSourcedFamilyMemberLink
-Subgraphs Processed: 0
-Output Files Generated:
-  - 1500_CDD_TUSourcedFamilyMemberLink_subgraph_logic_optimized.json
-  - 1500_CDD_TUSourcedFamilyMemberLink_final_mapping_optimized.json
-  - 1500_CDD_TUSourcedFamilyMemberLink_source_to_target_mapping.xlsx
-All files saved in: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation
-================================================================================      
-
-✅ STEP 3 COMPLETE!
-
-2025-11-21 21:21:06.663 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_run_step3:321 - Excel file generated: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_source_to_target_mapping.xlsx
-2025-11-21 21:21:06.664 | INFO     | parsers.abinitio.automation.abinitio_sttm_generator:_run_step3:325 - Mapping JSON generated: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\outputs\sttm_automation\1500_CDD_TUSourcedFamilyMemberLink_final_mapping_optimized.json
-2025-11-21 21:21:06.668 | INFO     | services.local_search.local_search_client:index_documents:105 - Indexing 1 documents...
-2025-11-21 21:21:06.668 | INFO     | services.local_search.local_search_client:index_documents:155 - Generating embeddings...
-Batches: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 1/1 [00:00<00:00,  8.33it/s]
-2025-11-21 21:21:07.263 | INFO     | services.local_search.local_search_client:index_documents:262 - ✓ Indexed 1 documents successfully (upserted)
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
+2025-12-23 18:35:03.155 | INFO     | services.ai_script_analyzer:__init__:48 - ✓ AI Script Analyzer initialized with gpt-4
+2025-12-23 18:35:03.155 | INFO     | services.lineage.lineage_agents:__init__:68 - ✓ Parsing Agent initialized with cross-system context support
+2025-12-23 18:35:03.156 | INFO     | services.lineage.lineage_agents:__init__:446 - ✓ Logic Agent initialized
+2025-12-23 18:35:03.156 | INFO     | services.lineage.sttm_generator:__init__:87 - ✓ STTM Generator initialized
+2025-12-23 18:35:03.156 | INFO     | services.lineage.lineage_agents:__init__:696 - ✓ Mapping Agent initialized
+2025-12-23 18:35:03.705 | INFO     | services.logic_comparator:__init__:49 - ✓ Logic Comparator initialized with Azure OpenAI
+2025-12-23 18:35:03.705 | INFO     | services.lineage.lineage_agents:__init__:761 - ✓ Similarity Agent initialized
+2025-12-23 18:35:03.706 | INFO     | services.lineage.lineage_agents:__init__:954 - ✓ Lineage Agent initialized
+2025-12-23 18:35:03.706 | INFO     | services.lineage.lineage_agents:__init__:1086 - ✓ Lineage Orchestrator initialized with all agents (cross-system context enabled)
+2025-12-23 18:35:03.707 | INFO     | ui.lineage_tab:render_lineage_tab:80 - ✓ Lineage Orchestrator initialized
+2025-12-23 18:35:03.715 | INFO     | services.lineage.lineage_agents:__init__:761 - ✓ Similarity Agent initialized
+2025-12-23 18:35:03.724 | INFO     | services.metadata_extractor:get_tables:50 - 📊 Extracting tables from hadoop...
+2025-12-23 18:35:07.687 | INFO     | services.metadata_extractor:get_tables:79 -   ✓ Found 375 unique tables in hadoop
+2025-12-23 18:35:46.386 | INFO     | services.langgraph.workflow:query:152 - Processing query: Can you generate logic excel for Databricks " pl_leaddiscovery_lead_propagation" pipeline
+2025-12-23 18:35:46.387 | INFO     | services.langgraph.memory:__init__:87 - Initialized conversation memory for session session_20251223_183546
+2025-12-23 18:35:46.389 | INFO     | services.langgraph.workflow:_analyze_query_node:230 - Node: Analyze Query
+2025-12-23 18:35:46.390 | INFO     | services.langgraph.workflow:_analyze_query_node:252 -   Intent: QueryIntent.EXCEL_GENERATION, Systems: [<SystemType.DATABRICKS: 'databricks'>], Filter:  pl_leaddiscovery_lead_propagation
+2025-12-23 18:35:46.391 | INFO     | services.langgraph.workflow:_retrieve_node:271 - Node: Retrieve
+2025-12-23 18:35:46.391 | DEBUG    | services.retrieval.query_rewriter:rewrite_query:90 - Rewrote query: 'Can you generate logic excel for Databricks " pl_leaddiscovery_lead_propagation" pipeline' -> 'Can you generate logic excel for Databricks " pl_leaddiscovery_lead_propagation" pipeline databricks databricks pipeline databricks notebook'
+2025-12-23 18:35:48.953 | DEBUG    | services.retrieval.reranker:rerank:133 - Reranked 5 documents -> 5 results
+2025-12-23 18:35:48.954 | INFO     | services.langgraph.workflow:_retrieve_node:335 -   Retrieved 5 documents
+2025-12-23 18:35:48.955 | INFO     | services.langgraph.workflow:_read_files_node:355 - Node: Read Files
+2025-12-23 18:35:48.955 | INFO     | services.langgraph.workflow:_read_files_node:383 -   Reading 5 files
+2025-12-23 18:35:48.956 | ERROR    | services.analysis.file_reader:read_file:186 - File not found: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\LeadDiscovery\leadverify\process_leadverify_leads.py
+2025-12-23 18:35:48.956 | ERROR    | services.analysis.file_reader:read_file:186 - File not found: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\adf\pipeline\pl_leaddiscovery_lead_propagation.json
+2025-12-23 18:35:48.956 | ERROR    | services.analysis.file_reader:read_file:186 - File not found: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\adf\pipeline\pl_leaddiscovery_leadlookup_knowncommercial.json
+2025-12-23 18:35:48.956 | ERROR    | services.analysis.file_reader:read_file:186 - File not found: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\LeadServiceBase\PopulateLsbLeadsReference.scala
+2025-12-23 18:35:48.957 | ERROR    | services.analysis.file_reader:read_file:186 - File not found: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\LeadServiceBase\PopulateLSBLeads.py
+2025-12-23 18:35:48.957 | INFO     | services.langgraph.workflow:_read_files_node:425 -   Read 0 files successfully (5 failed)
+2025-12-23 18:35:48.958 | INFO     | services.langgraph.workflow:_analyze_code_node:447 - Node: Analyze Code
+2025-12-23 18:35:48.959 | INFO     | services.langgraph.workflow:_analyze_code_node:502 -   Analyzed 0 files (0 failed)
+2025-12-23 18:35:48.960 | INFO     | services.langgraph.workflow:_generate_response_node:525 - Node: Generate Response
+2025-12-23 18:35:48.961 | INFO     | services.langgraph.workflow:_generate_excel_response:1105 - Generating Excel report...
+2025-12-23 18:35:48.962 | INFO     | services.langgraph.workflow:_generate_databricks_documentation_excel:1221 - Generating Databricks-only documentation Excel for:  pl_leaddiscovery_lead_propagation
+2025-12-23 18:35:48.962 | INFO     | services.langgraph.workflow:_generate_databricks_documentation_excel:1230 - Extracting Databricks logic...
+2025-12-23 18:35:48.962 | INFO     | services.stag.databricks_logic_extractor:extract_logic:66 - 📊 Extracting logic for Databricks pipeline:  pl_leaddiscovery_lead_propagation
+2025-12-23 18:35:49.327 | INFO     | services.stag.databricks_logic_extractor:_search_pipeline_documents:122 -    Found 20 Databricks/ADF documents for  pl_leaddiscovery_lead_propagation
+2025-12-23 18:35:49.328 | INFO     | services.stag.databricks_logic_extractor:_find_adf_json:139 -    🔍 Searching for ADF JSON:  pl_leaddiscovery_lead_propagation
+2025-12-23 18:35:49.328 | INFO     | services.stag.databricks_logic_extractor:_find_adf_json:163 -    Trying fuzzy search for  pl_leaddiscovery_lead_propagation...
+2025-12-23 18:35:49.330 | INFO     | services.stag.databricks_logic_extractor:_find_adf_json:192 -    ✅ FOUND (partial match): ./Databricks_repo/adf/pipeline\pl_leaddiscovery_lead_propagation.json
+2025-12-23 18:35:49.364 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:49.364 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_createlookup_maxminadmitdays') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_createlookup_maxminadmitdays    
+2025-12-23 18:35:49.370 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:49.371 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_createlookup_maxminadmitdays') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_createlookup_maxminadmitdays    
+2025-12-23 18:35:49.645 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 33 input tables from /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_createlookup_maxminadmitdays: ['sql', 'ICG', 'specified', 'various', 'an', 'functions', 'a', 'jdbc', 'window', 'edi', 'datetime', 'LeadDiscovery', 'py', 'the', 'delta', 'functools', 'multiple', 'hospitals', 'ADLS', 'MapR', 'other', 'types', 'LSB', 'output', 'paths', 'parameters', 'edipartnertype', 'container', 'hospitalprovidernums', 'storage', 'configparser', 'Azure', 'sqlserver']
+2025-12-23 18:35:49.648 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:49.648 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_createlookup_maxminadmitdays') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_createlookup_maxminadmitdays    
+2025-12-23 18:35:50.025 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 55 input tables from /Insleads-code/Common-Util/360_logger_v1: ['Cosmos', 'policy', 'ICG', 'specified', 'csv', 'UC', 'json', 'various', 'pyspark', 'databases', 'functions', 'an', 'a', 'jdbc', 'window', 'edi', 'datetime', 'Databricks', 'parquet', 'py', 'the', 'adf', 'delta', 'source', 'markedgoodrows', 'CSV', 'oltp', 'or', 'data_df', 'joined', 'any', 'MapR', 'dateutil', 'Staging', 'imrecs', 'types', 'futures', 'and', 'conf', 'another', 'widget', 'LSB', 'staging', 'either', 'paths', 'policyinfotable', 'specific', 'cosmosdb', 'distinct_src_load3', 'escincpeople', 'RAW_CSV', 'policyinfo1', 'sql', 'corruptrowstable', 'Azure']
+2025-12-23 18:35:50.447 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 49 input tables from /Insleads-code/Common-Util/update_notification: ['Cosmos', 'globalcosmosdb', 'policy', 'ICG', 'specified', 'csv', 'json', 'pyspark', 'functions', 'jdbc', 'a', 'table', 'an', 'user', 'window', 'datetime', 'Databricks', 'py', 'widgets', 'the', 'notificationdir', 'upstream', 'notification', 'source', 'markedgoodrows', 'functools', 'oltp', 'or', 'joined', 'MapR', 'Staging', 'types', 'and', 'conf', 'staging', 'LSB', 'externallysourcedsubscriberdob', 'policyinfotable', 'paths', 'externallysourcedsubscriberdob_staging', 'operations_log_360', 'deduped_subdob_verified', 'distinct_src_load3', 'all_leads', 'escincpeople', 'policyinfo1', 'sql', 'corruptrowstable', 'notificationtype']
+2025-12-23 18:35:50.700 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 25 input tables from /Insleads-code/Common-Util/get_breadcrumb_multiple_notifications_notificationtype: ['Cosmos', 'pipeline', 'globalcosmosdb', 'specified', 'json', 'functions', 'an', 'a', 'window', 'Databricks', 'py', 'notification', 'the', 'notificationdir', 'upstream', 'oltp', 'ADLS', 'MapR', 'tables', 'types', 'widget', 'CosmosDB', 'sql', 'Azure', 'notificationtype']
+2025-12-23 18:35:50.764 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:50.765 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_get_pa') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_get_pa
+2025-12-23 18:35:50.768 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:50.768 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_get_pa') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_get_pa
+2025-12-23 18:35:50.950 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 52 input tables from /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_get_pa: ['reportwarehousemedicaideligiblepaes', 'parameter', 'hcsystems', 'chc_hosp_mapping', 'up_leads', 'ICG', 'leads', 'vsnappatientacctsflags', 'data', 'pyspark', 'function', 'functions', 'a', 'window', 'parquet', 'edi', 'Databricks', 'py', 'LeadDiscovery', 'the', 'chc_participating_carrier_hospitals', 'datetime', 'delta', 'keys', 'foundcoverage_hits', 'hospitals', 'sent_leads', 'permIdPatientAcctId_path', 'patientacctsaccesscoordinator', 'any', 'MapR', 'several', 'tables', 'repo', 'to', 'types', 'patientaccts', 'and', 'conf', 'LSB', 'widget', 'diff_leads', 'vwhospitalattributevalues', 'all_leads', 'these', 'chc_eid_mapping', 'OPT', 'foundcoverage', 'chc_publish', 'storage', 'sql', 'Azure']
+2025-12-23 18:35:50.953 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:50.953 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_get_pa') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_get_pa
+2025-12-23 18:35:51.062 | INFO     | services.stag.databricks_logic_extractor:_extract_activities_recursive:326 -       Found IfCondition 'run_process_leads': 1 true, 1 false
+2025-12-23 18:35:51.066 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.069 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_process_leads_chc') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads_chc
+2025-12-23 18:35:51.073 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.074 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_process_leads_chc') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads_chc
+2025-12-23 18:35:51.144 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 70 input tables from /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads_chc: ['edipartnerattributevalues', 'ha', 'reportwarehousemedicaideligiblepaes', 'EdiPartnersHospitalBillDLRule', 'leads_all', 'partnerpolicyidblacklists', 'parameter', 'AllLeadsAppliedParters', 'hcsystems', 'chc_hosp_mapping', 'lead', 'EdiPartners', '20211107T23-IX', 'ICG', 'fc', 'leads', 'vsnappatientacctsflags', 'candidatepaleads', 'hospitalnpioverrides', 'data', 'pyspark', 'lf2', 'HospInsuranceCodes', 'functions', 'a', 'edipartnerattributes', 'PatientAcctsCodes', 'edipartners', 'window', 'parquet', 'edi', 'Databricks', 'py', 'widgets', 'the', 'chc_participating_carrier_hospitals', 'leadstatusmaxenddate', 'delta', 'ohiinactivecandidatepaleads', 'foundcoverage_hits', 'hospitals', 'any', 'several', 'MapR', 'BillingDeadline', 'AllLeadsKnownCoveragePolicyId', 'SQL', 'LeadDiscoveryConfig', 'hospitalpayercob', 'types', 'AllLeads', 'inactiveleads', 'Hospitals', 'patientaccts', 'conf', 'LSB', 'ohicandidatepaleads', 'patientacctspayercob', 'pt', 'vwhospitalattributevalues', 'all_leads', 'lf1', 'chc_eid_mapping', 'allfcleads', 'foundcoverage', 'chc_publish', 'storage', 'sql', 'leadstatus', 'Azure']
+2025-12-23 18:35:51.148 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.148 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_process_leads_chc') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads_chc
+2025-12-23 18:35:51.211 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.212 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_process_leads') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads
+2025-12-23 18:35:51.214 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.214 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_process_leads') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads
+2025-12-23 18:35:51.259 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 76 input tables from /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads: ['edipartnerattributevalues', 'ha', 'reportwarehousemedicaideligiblepaes', 'EdiPartnersHospitalBillDLRule', 'leads_all', 'partnerpolicyidblacklists', 'parameter', 'AllLeadsAppliedParters', 'hcsystems', 'chc_hosp_mapping', 'lead', 'EdiPartners', '20211107T23-IX', 'ICG', 'fc', 'leads', 'vsnappatientacctsflags', 'candidatepaleads', 'hospitalnpioverrides', 'data', 'pyspark', 'lf2', 'HospInsuranceCodes', 'function', 'functions', 'a', 'edipartnerattributes', 'PatientAcctsCodes', 'edipartners', 'window', 'parquet', 'edi', 'Databricks', 'py', 'widgets', 'the', 'chc_participating_carrier_hospitals', 'leadstatusmaxenddate', 'delta', 'ohiinactivecandidatepaleads', 'keys', 'foundcoverage_hits', 'hospitals', 'any', 'MapR', 'several', 'BillingDeadline', 'AllLeadsKnownCoveragePolicyId', 'repo', 'SQL', 'LeadDiscoveryConfig', 'hospitalpayercob', 'to', 'types', 'AllLeads', 'inactiveleads', 'Hospitals', 'and', 'patientaccts', 'conf', 'LSB', 'widget', 'ohicandidatepaleads', 'patientacctspayercob', 'pt', 'vwhospitalattributevalues', 'all_leads', 'lf1', 'chc_eid_mapping', 'allfcleads', 'foundcoverage', 'chc_publish', 'storage', 'sql', 'leadstatus', 'Azure']
+2025-12-23 18:35:51.262 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.263 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_process_leads') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads
+2025-12-23 18:35:51.316 | INFO     | services.stag.databricks_logic_extractor:_extract_activities_recursive:326 -       Found IfCondition 'run_push_leads': 1 true, 0 false
+2025-12-23 18:35:51.319 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.320 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'sqoop_delta') → /Insleads-code/LeadDiscovery/leadpropagation/sqoop_delta
+2025-12-23 18:35:51.323 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.323 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'sqoop_delta') → /Insleads-code/LeadDiscovery/leadpropagation/sqoop_delta
+2025-12-23 18:35:51.477 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 80 input tables from /Insleads-code/LeadDiscovery/leadpropagation/sqoop_delta: ['edipayers', '20211107T23-IX', 'UC', 'pyspark', 'leadstatusmaxenddate', 'input', 'Hospitals', 'patientgmrnpermid', 'LSB', 'ohicandidatepaleads', 'all_leads', 'edipartnertype', 'candidates', 'py', 'sql', 'edipartnerattributevalues', 'pipeline', 'partnerpolicyidblacklists', 'parameter', 'hcsystems', 'fc', 'ICG', 'various', 'functions', 'a', 'parquet', 'leads_bcbs_df', 'scala', 'MapR', 'AllLeads', 'inactiveleads', 'candidate', 'val', 'lf1', 'Parquet', 'EdiPartnersHospitalBillDLRule', 'leads_all', 'ghic', 'leads', 'candidatepaleads', 'hospitalnpioverrides', 'jdbc', 'edipartnerattributes', 'edipartners', 'datetime', 'the', 'AllLeadsKnownCoveragePolicyId', 'BillingDeadline', 'other', 'with', 'LeadDiscoveryConfig', 'types', 'globalmrnxhospinsurancecodes', 'and', 'conf', 'patientacctspayercob', 'lead', 'ohiinactivecandidatepaleads', 'ha', 'permid', 'EdiPartners', 'AllLeadsAppliedParters', 'lf2', 'HospInsuranceCodes', 'globalmrnxpaccts', 'PatientAcctsCodes', 'window', 'edi', 'delta', 'hospitals', 'SQL', 'hospitalpayercob', 'patientaccts', 'pt', 'bcbsprefixtopayermappings', 'allfcleads', 'hospinsurancecodes', 'storage', 'leadstatus', 'Azure']
+2025-12-23 18:35:51.480 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.481 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'sqoop_delta') → /Insleads-code/LeadDiscovery/leadpropagation/sqoop_delta
+2025-12-23 18:35:51.582 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 49 input tables from /Insleads-code/Common-Util/update_notification: ['Cosmos', 'globalcosmosdb', 'policy', 'ICG', 'specified', 'csv', 'json', 'pyspark', 'functions', 'jdbc', 'a', 'table', 'an', 'user', 'window', 'datetime', 'Databricks', 'py', 'widgets', 'the', 'notificationdir', 'upstream', 'notification', 'source', 'markedgoodrows', 'functools', 'oltp', 'or', 'joined', 'MapR', 'Staging', 'types', 'and', 'conf', 'staging', 'LSB', 'externallysourcedsubscriberdob', 'policyinfotable', 'paths', 'externallysourcedsubscriberdob_staging', 'operations_log_360', 'deduped_subdob_verified', 'distinct_src_load3', 'all_leads', 'escincpeople', 'policyinfo1', 'sql', 'corruptrowstable', 'notificationtype']
+2025-12-23 18:35:51.788 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 33 input tables from /Insleads-code/Common-Util/delete_trigger_file: ['policy', 'csv', 'json', 'pyspark', 'databases', 'functions', 'an', 'a', 'jdbc', 'user', 'Databricks', 'py', 'widgets', 'the', 'source', 'markedgoodrows', 'ADLS', 'or', 'data_df', 'joined', 'any', 'Staging', 'types', 'another', 'staging', 'either', 'policyinfotable', 'distinct_src_load3', 'escincpeople', 'policyinfo1', 'sql', 'corruptrowstable', 'Azure']
+2025-12-23 18:35:51.860 | INFO     | services.stag.databricks_logic_extractor:_extract_activities_recursive:326 -       Found IfCondition 'run_check_leads': 1 true, 0 false
+2025-12-23 18:35:51.863 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.863 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_check_leads') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_check_leads
+2025-12-23 18:35:51.866 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.866 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_check_leads') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_check_leads
+2025-12-23 18:35:51.920 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 81 input tables from /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_check_leads: ['20211107T23-IX', 'pyspark', 'LeadDiscovery', 'Databricks', 'leadstatusmaxenddate', 'any', 'several', 'repo', 'to', 'Hospitals', 'LSB', 'ohicandidatepaleads', 'all_leads', 'chc_publish', 'sql', 'py', 'widget', 'edipartnerattributevalues', 'partnerpolicyidblacklists', 'parameter', 'hcsystems', 'chc_hosp_mapping', 'up_leads', 'ICG', 'fc', 'data', 'functions', 'a', 'parquet', 'keys', 'MapR', 'AllLeads', 'inactiveleads', 'lf1', 'chc_eid_mapping', 'OPT', 'foundcoverage', 'EdiPartnersHospitalBillDLRule', 'leads_all', 'leads', 'candidatepaleads', 'hospitalnpioverrides', 'edipartnerattributes', 'edipartners', 'datetime', 'widgets', 'the', 'patientacctsaccesscoordinator', 'AllLeadsKnownCoveragePolicyId', 'BillingDeadline', 'LeadDiscoveryConfig', 'types', 'and', 'conf', 'patientacctspayercob', 'lead', 'ohiinactivecandidatepaleads', 'ha', 'reportwarehousemedicaideligiblepaes', 'EdiPartners', 'AllLeadsAppliedParters', 'lf2', 'function', 'HospInsuranceCodes', 'PatientAcctsCodes', 'window', 'edi', 'chc_participating_carrier_hospitals', 'delta', 'foundcoverage_hits', 'hospitals', 'sent_leads', 'tables', 'SQL', 'hospitalpayercob', 'diff_leads', 'pt', 'allfcleads', 'storage', 'leadstatus', 'Azure']
+2025-12-23 18:35:51.923 | DEBUG    | services.stag.databricks_logic_extractor:_get_pipeline_parameter_default:453 -          Found parameter 'notebookpath' = '/Insleads-code/LeadDiscovery/leadpropagation/'
+2025-12-23 18:35:51.923 | INFO     | services.stag.databricks_logic_extractor:_evaluate_adf_expression:407 -       ✅ Evaluated expression: @concat(pipeline().parameters.notebookpath,'leadpropagation_check_leads') → /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_check_leads
+2025-12-23 18:35:51.966 | INFO     | services.stag.databricks_logic_extractor:_extract_activities_recursive:326 -       Found IfCondition 'run_sharding': 2 true, 0 false
+2025-12-23 18:35:52.112 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 95 input tables from /Insleads-code/LeadDiscovery/common/db_sharding_to_adls: ['20211107T23-IX', 'LeadDiscovery', 'Databricks', 'LeadServiceBase', 'leadstatusmaxenddate', 'input', 'ADLS', 'several', 'Hospitals', 'LSB', 'ohicandidatepaleads', 'JOINED', 'all_leads', 'sql', 'py', 'edipartnerattributevalues', 'pipeline', 'partnerpolicyidblacklists', 'hcsystems', 'up_leads', 'ICG', 'fc', 'various', 'functions', 'a', 'permid_subdob', 'toServeDf', 'scala', 'Operation', 'MapR', 'tbl2', 'AllLeads', 'inactiveleads', 'val', 'lf1', 'OPT', 'Parquet', 'EdiPartnersHospitalBillDLRule', 'leads_all', 'leads', 'candidatepaleads', 'hospitalnpioverrides', 'for', 'edipartnerattributes', 'user', 'edipartners', 'datetime', 'the', 'patientacctsaccesscoordinator', 'AllLeadsKnownCoveragePolicyId', 'BillingDeadline', 'with', 'LeadDiscoveryConfig', 'types', 'and', 'details', 'paths', 'patientacctspayercob', 'CLEANSED', 'ICH_CLEANSED', 'parameters', 'df_permid_dob_filtered', 'subscriberdoblookup', 'lead', 'ohiinactivecandidatepaleads', 'ha', 'input_tbl', 'EdiPartners', 'AllLeadsAppliedParters', 'tbl1', 'df_permid_dob', 'logic', 'lf2', 'HospInsuranceCodes', 'PatientAcctsCodes', 'window', 'edi', 'FC_CLEANSED', 'delta', 'hospitals', 'sent_leads', 'tables', 'lr_transaction', 'SQL', 'hospitalpayercob', 'another', 'diff_leads', 'hospital', 'consumerinforaw', 'pt', 'allfcleads', 'storage', 'leadstatus', 'operation', 'Azure']
+2025-12-23 18:35:52.303 | INFO     | services.stag.databricks_logic_extractor:_extract_inputs_from_notebook_code:578 -       Extracted 83 input tables from /Insleads-code/LeadDiscovery/common/db_sharding_move: ['edipayers', '20211107T23-IX', 'pyspark', 'LeadDiscovery', 'Databricks', 'leadstatusmaxenddate', 'input', 'ADLS', 'Hospitals', 'patientgmrnpermid', 'LSB', 'ohicandidatepaleads', 'all_leads', 'edipartnertype', 'candidates', 'py', 'sql', 'edipartnerattributevalues', 'pipeline', 'partnerpolicyidblacklists', 'hcsystems', 'fc', 'ICG', 'up_leads', 'functions', 'a', 'scala', 'MapR', 'AllLeads', 'inactiveleads', 'candidate', 'val', 'lf1', 'OPT', 'EdiPartnersHospitalBillDLRule', 'leads_all', 'ghic', 'leads', 'candidatepaleads', 'hospitalnpioverrides', 'edipartnerattributes', 'edipartners', 'datetime', 'the', 'patientacctsaccesscoordinator', 'AllLeadsKnownCoveragePolicyId', 'BillingDeadline', 'other', 'LeadDiscoveryConfig', 'types', 'globalmrnxhospinsurancecodes', 'and', 'config', 'conf', 'patientacctspayercob', 'parameters', 'ohiinactivecandidatepaleads', 'lead', 'ha', 'input_tbl', 'permid', 'EdiPartners', 'AllLeadsAppliedParters', 'lf2', 'HospInsuranceCodes', 'globalmrnxpaccts', 'PatientAcctsCodes', 'window', 'edi', 'delta', 'hospitals', 'sent_leads', 'tables', 'SQL', 'hospitalpayercob', 'patientaccts', 'diff_leads', 'pt', 'allfcleads', 'hospinsurancecodes', 'storage', 'leadstatus', 'Azure']
+2025-12-23 18:35:52.356 | INFO     | services.stag.databricks_logic_extractor:_extract_activities_from_adf:243 -    Extracted 25 total activities from ADF JSON (including nested)
+2025-12-23 18:35:52.410 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_createlookup_maxminadmitdays
+2025-12-23 18:35:52.416 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_createlookup_maxminadmitdays → Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_createlookup_maxminadmitdays.py
+2025-12-23 18:35:52.417 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_createlookup_maxminadmitdays.py
+2025-12-23 18:35:52.451 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_createlookup_maxminadmitdays.py
+2025-12-23 18:35:52.452 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_createlookup_maxminadmitdays.py
+2025-12-23 18:35:52.453 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in leadpropagation_createlookup_maxminadmitdays.py
+2025-12-23 18:35:52.467 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1137 -           Using generic table name: parquet_output_b
+2025-12-23 18:35:52.468 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1137 -           Using generic table name: parquet_output_a
+2025-12-23 18:35:52.468 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from leadpropagation_createlookup_maxminadmitdays.py
+2025-12-23 18:35:52.469 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_createlookup_maxminadmitdays.py
+2025-12-23 18:35:52.469 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:36:06.447 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 24 steps, 9 snippets for /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_createlookup_maxminadmitdays
+2025-12-23 18:36:06.553 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/Common-Util/360_logger_v1
+2025-12-23 18:36:06.562 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/Common-Util/360_logger_v1 → Databricks_repo\Common-Util\360_logger_v1.py
+2025-12-23 18:36:06.564 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\Common-Util\360_logger_v1.py
+2025-12-23 18:36:06.614 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\Common-Util\360_logger_v1.py
+2025-12-23 18:36:06.616 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\Common-Util\360_logger_v1.py
+2025-12-23 18:36:06.625 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in 360_logger_v1.py
+2025-12-23 18:36:06.653 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from 360_logger_v1.py
+2025-12-23 18:36:06.661 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\Common-Util\360_logger_v1.py
+2025-12-23 18:36:06.668 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:36:33.042 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 35 steps, 10 snippets for /Insleads-code/Common-Util/360_logger_v1
+2025-12-23 18:36:33.112 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/Common-Util/update_notification
+2025-12-23 18:36:33.116 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/Common-Util/update_notification → Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:36:33.117 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:36:33.156 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:36:33.157 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:36:33.159 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in update_notification.py
+2025-12-23 18:36:33.161 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from update_notification.py
+2025-12-23 18:36:33.161 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:36:33.161 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:36:41.521 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 25 steps, 12 snippets for /Insleads-code/Common-Util/update_notification
+2025-12-23 18:36:41.702 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: Unknown
+2025-12-23 18:36:41.704 | WARNING  | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1922 -    ⚠ Invalid notebook path: 'Unknown'
+2025-12-23 18:36:41.704 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1747 -    ⚠ Cannot find file for Unknown
+2025-12-23 18:36:41.704 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1748 -       Attempted path: None
+2025-12-23 18:36:41.704 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1749 -       Falling back to vector DB content (column extraction will be skipped)
+2025-12-23 18:37:03.957 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/Common-Util/get_breadcrumb_multiple_notifications_notificationtype
+2025-12-23 18:37:03.958 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/Common-Util/get_breadcrumb_multiple_notifications_notificationtype → Databricks_repo\Common-Util\get_breadcrumb_multiple_notifications_notificationtype.py
+2025-12-23 18:37:03.958 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\Common-Util\get_breadcrumb_multiple_notifications_notificationtype.py
+2025-12-23 18:37:03.988 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\Common-Util\get_breadcrumb_multiple_notifications_notificationtype.py
+2025-12-23 18:37:03.988 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\Common-Util\get_breadcrumb_multiple_notifications_notificationtype.py
+2025-12-23 18:37:03.990 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in get_breadcrumb_multiple_notifications_notificationtype.py
+2025-12-23 18:37:03.994 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from get_breadcrumb_multiple_notifications_notificationtype.py
+2025-12-23 18:37:03.995 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\Common-Util\get_breadcrumb_multiple_notifications_notificationtype.py
+2025-12-23 18:37:03.995 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:37:17.634 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 27 steps, 15 snippets for /Insleads-code/Common-Util/get_breadcrumb_multiple_notifications_notificationtype
+2025-12-23 18:37:17.656 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: Unknown
+2025-12-23 18:37:17.657 | WARNING  | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1922 -    ⚠ Invalid notebook path: 'Unknown'
+2025-12-23 18:37:17.657 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1747 -    ⚠ Cannot find file for Unknown
+2025-12-23 18:37:17.658 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1748 -       Attempted path: None
+2025-12-23 18:37:17.658 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1749 -       Falling back to vector DB content (column extraction will be skipped)
+2025-12-23 18:38:01.502 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_get_pa
+2025-12-23 18:38:01.503 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_get_pa → Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_get_pa.py
+2025-12-23 18:38:01.503 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_get_pa.py
+2025-12-23 18:38:01.554 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_get_pa.py
+2025-12-23 18:38:01.554 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_get_pa.py
+2025-12-23 18:38:01.557 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in leadpropagation_get_pa.py
+2025-12-23 18:38:01.603 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'tmp_data_path' from variable 'hdfs_tmp_data_path'
+2025-12-23 18:38:01.603 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'tmp_data_path' from variable 'hdfs_tmp_data_path'
+2025-12-23 18:38:01.605 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'data_path' from variable 'hdfs_data_path'
+2025-12-23 18:38:01.607 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.607 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.609 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.609 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.609 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.609 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.609 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.609 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.611 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.611 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.611 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.611 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'pa_op_path' from variable 'pa_op_path'
+2025-12-23 18:38:01.611 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from leadpropagation_get_pa.py
+2025-12-23 18:38:01.611 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_get_pa.py
+2025-12-23 18:38:01.611 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:38:18.412 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 30 steps, 15 snippets for /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_get_pa
+2025-12-23 18:38:18.435 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: Unknown
+2025-12-23 18:38:18.436 | WARNING  | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1922 -    ⚠ Invalid notebook path: 'Unknown'
+2025-12-23 18:38:18.437 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1747 -    ⚠ Cannot find file for Unknown
+2025-12-23 18:38:18.437 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1748 -       Attempted path: None
+2025-12-23 18:38:18.437 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1749 -       Falling back to vector DB content (column extraction will be skipped)
+2025-12-23 18:39:03.216 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: Unknown
+2025-12-23 18:39:03.217 | WARNING  | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1922 -    ⚠ Invalid notebook path: 'Unknown'
+2025-12-23 18:39:03.217 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1747 -    ⚠ Cannot find file for Unknown
+2025-12-23 18:39:03.217 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1748 -       Attempted path: None
+2025-12-23 18:39:03.217 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1749 -       Falling back to vector DB content (column extraction will be skipped)
+2025-12-23 18:40:03.752 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads_chc
+2025-12-23 18:40:03.754 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads_chc → Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads_chc.py
+2025-12-23 18:40:03.755 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads_chc.py
+2025-12-23 18:40:03.789 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads_chc.py
+2025-12-23 18:40:03.790 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads_chc.py
+2025-12-23 18:40:03.791 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in leadpropagation_process_leads_chc.py
+2025-12-23 18:40:03.862 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:03.871 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:03.872 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:03.905 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from leadpropagation_process_leads_chc.py
+2025-12-23 18:40:03.906 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads_chc.py
+2025-12-23 18:40:03.906 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:40:24.161 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 27 steps, 16 snippets for /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads_chc
+2025-12-23 18:40:24.196 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads
+2025-12-23 18:40:24.198 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads → Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads.py
+2025-12-23 18:40:24.198 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads.py
+2025-12-23 18:40:24.234 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads.py
+2025-12-23 18:40:24.234 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads.py
+2025-12-23 18:40:24.236 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in leadpropagation_process_leads.py
+2025-12-23 18:40:24.258 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.259 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.259 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.260 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.260 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.260 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.260 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.261 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.262 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.262 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.262 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.263 | DEBUG    | services.stag.databricks_logic_extractor:_link_dataframes_to_tables:1133 -           Inferred table name 'scratch' from variable 'hdfs_scratch'
+2025-12-23 18:40:24.263 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from leadpropagation_process_leads.py
+2025-12-23 18:40:24.263 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\LeadDiscovery\leadpropagation\leadpropagation_process_leads.py
+2025-12-23 18:40:24.264 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:40:38.457 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 30 steps, 21 snippets for /Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads
+2025-12-23 18:40:38.480 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: Unknown
+2025-12-23 18:40:38.481 | WARNING  | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1922 -    ⚠ Invalid notebook path: 'Unknown'
+2025-12-23 18:40:38.481 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1747 -    ⚠ Cannot find file for Unknown
+2025-12-23 18:40:38.481 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1748 -       Attempted path: None
+2025-12-23 18:40:38.482 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1749 -       Falling back to vector DB content (column extraction will be skipped)
+2025-12-23 18:41:09.331 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/LeadDiscovery/leadpropagation/sqoop_delta
+2025-12-23 18:41:09.332 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/LeadDiscovery/leadpropagation/sqoop_delta → Databricks_repo\LeadDiscovery\leadpropagation\sqoop_delta.py
+2025-12-23 18:41:09.333 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\LeadDiscovery\leadpropagation\sqoop_delta.py
+2025-12-23 18:41:09.365 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\LeadDiscovery\leadpropagation\sqoop_delta.py
+2025-12-23 18:41:09.365 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\LeadDiscovery\leadpropagation\sqoop_delta.py
+2025-12-23 18:41:09.367 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in sqoop_delta.py
+2025-12-23 18:41:09.373 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from sqoop_delta.py
+2025-12-23 18:41:09.374 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\LeadDiscovery\leadpropagation\sqoop_delta.py
+2025-12-23 18:41:09.374 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:41:18.140 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 27 steps, 9 snippets for /Insleads-code/LeadDiscovery/leadpropagation/sqoop_delta
+2025-12-23 18:41:18.160 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/Common-Util/update_notification
+2025-12-23 18:41:18.161 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/Common-Util/update_notification → Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:41:18.161 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:41:18.163 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:41:18.163 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:41:18.164 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in update_notification.py
+2025-12-23 18:41:18.164 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in update_notification.py
+2025-12-23 18:41:18.167 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from update_notification.py
+2025-12-23 18:41:18.164 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in update_notification.py
+2025-12-23 18:41:18.167 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from update_notification.py
+2025-12-23 18:41:18.168 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:41:18.168 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:41:27.285 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 25 steps, 13 snippets for /Insleads-code/Common-Util/update_notification
+2025-12-23 18:41:27.328 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/Common-Util/delete_trigger_file
+2025-12-23 18:41:18.164 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in update_notification.py
+2025-12-23 18:41:18.167 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from update_notification.py
+2025-12-23 18:41:18.168 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\Common-Util\update_notification.py
+2025-12-23 18:41:18.168 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:41:27.285 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 25 steps, 13 snippets for /Insleads-code/Common-Util/update_notification
+2025-12-23 18:41:27.328 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: /Insleads-code/Common-Util/delete_trigger_file
+2025-12-23 18:41:27.333 | DEBUG    | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1951 -    📁 Constructed path: /Insleads-code/Common-Util/delete_trigger_file → Databricks_repo\Common-Util\delete_trigger_file.py
+2025-12-23 18:41:27.334 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1757 -    ✅ Found file: Databricks_repo\Common-Util\delete_trigger_file.py
+2025-12-23 18:41:27.365 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1768 -    📋 Extracting column schemas from Databricks_repo\Common-Util\delete_trigger_file.py
+2025-12-23 18:41:27.365 | INFO     | services.stag.databricks_logic_extractor:extract_column_schemas_from_notebook:734 -    🔍 Extracting column schemas from Databricks notebook: Databricks_repo\Common-Util\delete_trigger_file.py
+2025-12-23 18:41:27.367 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:764 -       Parsing PySpark with write linkage in delete_trigger_file.py
+2025-12-23 18:41:27.371 | INFO     | services.stag.databricks_logic_extractor:_extract_schemas_with_write_linkage:779 -       ✅ Extracted 0 table schemas from delete_trigger_file.py
+2025-12-23 18:41:27.373 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1775 -    ⚠ No column schemas extracted from Databricks_repo\Common-Util\delete_trigger_file.py
+2025-12-23 18:41:27.374 | DEBUG    | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1790 -    🤖 Sending to AI for semantic analysis...
+2025-12-23 18:41:38.827 | INFO     | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1800 -    ✅ AI extracted 25 steps, 10 snippets for /Insleads-code/Common-Util/delete_trigger_file
+2025-12-23 18:41:38.848 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: Unknown
+2025-12-23 18:41:38.848 | WARNING  | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1922 -    ⚠ Invalid notebook path: 'Unknown'
+2025-12-23 18:41:38.849 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1747 -    ⚠ Cannot find file for Unknown
+2025-12-23 18:41:38.849 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1748 -       Attempted path: None
+2025-12-23 18:41:38.849 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1749 -       Falling back to vector DB content (column extraction will be skipped)
+2025-12-23 18:42:07.657 | INFO     | services.stag.databricks_logic_extractor:_search_notebook_documents:1718 -    Found 20 documents for notebook: Unknown
+2025-12-23 18:42:07.658 | WARNING  | services.stag.databricks_logic_extractor:_construct_file_path_from_notebook_path:1922 -    ⚠ Invalid notebook path: 'Unknown'
+2025-12-23 18:42:07.658 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1747 -    ⚠ Cannot find file for Unknown
+2025-12-23 18:42:07.658 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1748 -       Attempted path: None
+2025-12-23 18:42:07.659 | WARNING  | services.stag.databricks_logic_extractor:_extract_notebook_logic_with_ai:1749 -       Falling back to vector DB content (column extraction will be skippe
