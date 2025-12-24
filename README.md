@@ -1,48 +1,122 @@
+ hospitalfk Differences - Update ALL THREE Sheets
 
-For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'`.
-2025-12-23 20:19:56.759 | INFO     | services.langgraph.workflow:query:152 - Processing query: Can you generate logic  excel for databricks pipeline pl_leaddiscovery_leadverify?
-2025-12-23 20:19:56.761 | INFO     | services.langgraph.workflow:_analyze_query_node:230 - Node: Analyze Query
-2025-12-23 20:19:56.761 | INFO     | services.langgraph.workflow:_analyze_query_node:252 -   Intent: QueryIntent.EXCEL_GENERATION, Systems: [<SystemType.DATABRICKS: 'databricks'>], Filter: pipeline
-2025-12-23 20:19:56.762 | INFO     | services.langgraph.workflow:_retrieve_node:271 - Node: Retrieve
-2025-12-23 20:19:56.762 | DEBUG    | services.retrieval.query_rewriter:rewrite_query:90 - Rewrote query: 'Can you generate logic  excel for databricks pipeline pl_leaddiscovery_leadverify?' -> 'Can you generate logic  excel for databricks pipeline pl_leaddiscovery_leadverify? databricks databricks notebook databricks pipeline'
-2025-12-23 20:19:57.036 | DEBUG    | services.retrieval.reranker:rerank:133 - Reranked 5 documents -> 5 results
-2025-12-23 20:19:57.036 | INFO     | services.langgraph.workflow:_retrieve_node:335 -   Retrieved 5 documents
-2025-12-23 20:19:57.038 | INFO     | services.langgraph.workflow:_read_files_node:355 - Node: Read Files
-2025-12-23 20:19:57.038 | INFO     | services.langgraph.workflow:_read_files_node:383 -   Reading 5 files
-2025-12-23 20:19:57.064 | DEBUG    | services.analysis.file_reader:read_file:229 - Read file: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\LeadDiscovery\leadverify\get_leadverify_kc_candidates.py (251 lines, python)
-2025-12-23 20:19:57.064 | DEBUG    | services.analysis.file_reader:read_file:175 - Using cached content for: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\adf\pipeline\pl_leaddiscovery_lead_propagation.json
-2025-12-23 20:19:57.065 | DEBUG    | services.analysis.file_reader:read_file:175 - Using cached content for: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\adf\pipeline\pl_leaddiscovery_leadlookup_knowncommercial.json
-2025-12-23 20:19:57.065 | DEBUG    | services.analysis.file_reader:read_file:175 - Using cached content for: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\adf\pipeline\pl_leaddiscovery_leadverify.json
-2025-12-23 20:19:57.065 | DEBUG    | services.analysis.file_reader:read_file:175 - Using cached content for: C:\Users\Ankur.Sinha\Downloads\CodebaseIntelligencev2\CodebaseIntelligence\adf\pipeline\pl_leadrepository_xref.json
-2025-12-23 20:19:57.065 | INFO     | services.langgraph.workflow:_read_files_node:425 -   Read 5 files successfully (0 failed)
-2025-12-23 20:19:57.066 | INFO     | services.langgraph.workflow:_analyze_code_node:447 - Node: Analyze Code
-2025-12-23 20:19:57.066 | INFO     | services.langgraph.workflow:_analyze_code_node:502 -   Analyzed 0 files (0 failed)
-2025-12-23 20:19:57.067 | INFO     | services.langgraph.workflow:_generate_response_node:525 - Node: Generate Response
-2025-12-23 20:19:57.067 | INFO     | services.langgraph.workflow:_generate_excel_response:1105 - Generating Excel report...
-2025-12-23 20:19:57.067 | INFO     | services.langgraph.workflow:_generate_databricks_documentation_excel:1221 - Generating Databricks-only documentation Excel for: pipeline
-2025-12-23 20:19:57.067 | INFO     | services.langgraph.workflow:_generate_databricks_documentation_excel:1230 - Extracting Databricks logic...
-2025-12-23 20:19:57.068 | INFO     | services.stag.databricks_logic_extractor:extract_logic:66 - 📊 Extracting logic for Databricks pipeline: pipeline
-2025-12-23 20:19:57.088 | INFO     | services.stag.databricks_logic_extractor:_search_pipeline_documents:122 -    Found 20 Databricks/ADF documents for pipeline
-2025-12-23 20:19:57.088 | INFO     | services.stag.databricks_logic_extractor:_find_adf_json:139 -    🔍 Searching for ADF JSON: pipeline
-2025-12-23 20:19:57.089 | INFO     | services.stag.databricks_logic_extractor:_find_adf_json:163 -    Trying fuzzy search for pipeline...
-2025-12-23 20:19:57.091 | INFO     | services.stag.databricks_logic_extractor:_find_adf_json:196 -    Trying vector DB fallback...
-2025-12-23 20:19:57.091 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:208 -    ❌ CRITICAL: ADF JSON NOT FOUND for 'pipeline'
-2025-12-23 20:19:57.091 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:209 -    Searched directories:
-2025-12-23 20:19:57.092 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:211 -      - ./Databricks_repo/adf/pipeline
-2025-12-23 20:19:57.092 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:211 -      - /Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/Databricks_repo/*/adf/pipeline
-2025-12-23 20:19:57.093 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:217 -    Available JSONs in ./Databricks_repo/adf/pipeline:
-2025-12-23 20:19:57.094 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - Dashboard.json
-2025-12-23 20:19:57.094 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_blacklisted_accounts.json
-2025-12-23 20:19:57.094 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_cdd_adhoc_copy_to_TU.json
-2025-12-23 20:19:57.094 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_cdd_bdf_download.json
-2025-12-23 20:19:57.094 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_cdd_bdf_download_checkfile.json
-2025-12-23 20:19:57.095 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_cdd_bdf_download_master.json
-2025-12-23 20:19:57.095 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_cdd_es_postbdf.json
-2025-12-23 20:19:57.095 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_cdd_es_postbdf_master.json
-2025-12-23 20:19:57.095 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_cdd_es_prebdf.json
-2025-12-23 20:19:57.095 | ERROR    | services.stag.databricks_logic_extractor:_find_adf_json:219 -      - pl_cdd_es_prebdf_master.json
-2025-12-23 20:19:58.682 | INFO     | services.stag.databricks_logic_extractor:_extract_activities_with_ai:2113 -    ✅ AI extracted 13 activities
-2025-12-23 20:19:58.682 | ERROR    | services.langgraph.workflow:_generate_databricks_documentation_excel:1310 - Databricks documentation Excel generation error: 'str' object has no attribute 'get'
-2025-12-23 20:19:58.683 | INFO     | services.langgraph.workflow:_generate_response_node:550 -   Generated response (confidence: 0.70)
-2025-12-23 20:19:58.684 | DEBUG    | services.langgraph.memory:add_turn:124 - Added user turn: Can you generate logic  excel for databricks pipel...
-2025-12-23 20:19:58.684 | DEBUG    | services.langgraph.memory:add_turn:124 - Added assistant turn: ❌ **Error generating Databricks documentation**
+## Summary
+You want to document the `hospitalfk` differences in **all three places** so clients can find it anywhere they look. Good idea!
+
+---
+
+## ✅ WHAT TO UPDATE
+
+### 1. **Logic Comparison Sheet - Row 10** (REQUIRED)
+### 2. **Hadoop Logic Sheet - Row 17** (REQUIRED)  
+### 3. **Databricks Logic Sheet - Row 11** (REQUIRED)
+
+---
+
+## 📝 EXACT TEXT TO ADD
+
+---
+
+## 1. LOGIC COMPARISON SHEET - Row 10
+
+**Column 2 (Hadoop Action Description) - ADD AT THE END:**
+```
+Best lead selection: ROW_NUMBER deduplication with PARTITION BY patientacctifk,lsb_edipartnerfk,lsb_coverageid,lsb_id (NO hospitalfk). Deduplicates across all hospitals per patient account.
+```
+
+**Column 3 (Databricks Activity Description) - ADD AT THE END:**
+```
+Best lead selection: ROW_NUMBER deduplication with PARTITION BY patientacctifk,hospitalfk,lsb_edipartnerfk,lsb_coverageid,lsb_id (INCLUDES hospitalfk). Deduplicates separately per hospital per patient account. Also uses upper(trim(lsb_coverageid)) for coverage ID normalization.
+```
+
+**Column 5 (Gaps/Notes) - ADD AT THE END:**
+```
+CRITICAL: Best lead selection deduplication difference - Databricks includes hospitalfk in PARTITION BY (both ROW_NUMBER windows), Hadoop does not. Hadoop deduplicates across ALL hospitals per patient account (one lead selected), while Databricks deduplicates separately PER HOSPITAL per patient account (one lead per hospital). This can result in different number of leads and different lead selection when patient accounts have leads from multiple hospitals.
+```
+
+---
+
+## 2. HADOOP LOGIC SHEET - Row 17, Column 6
+
+**Current text says:**
+```
+Step 14: Performs best lead selection - ROW_NUMBER by (patientacctifk, lsb_edipartnerfk, lsb_coverageid, lsb_id) ORDER BY lsb_demoupdatedate DESC, demohash DESC, then by keyvalue ASC, edidatasourcetablekey.
+```
+
+**REPLACE Step 14 with this (more accurate):**
+```
+Step 14: Performs best lead selection - Uses ROW_NUMBER window function for deduplication. First window: PARTITION BY patientacctifk,lsb_edipartnerfk,lsb_coverageid,lsb_id (NO hospitalfk) ORDER BY lsb_demoupdatedate DESC, demohash DESC. Second window: PARTITION BY patientacctifk,lsb_edipartnerfk,lsb_coverageid,rn ORDER BY keyvalue ASC, edidatasourcetablekey. Does NOT include hospitalfk in PARTITION BY, meaning deduplication happens across all hospitals for the same patient account (one best lead selected per patient account regardless of hospital).
+```
+
+**OR if you prefer to just ADD at the end (easier):**
+
+**ADD THIS at the end of Column 6 (after Step 15):**
+```
+Step 14 DETAIL: Best lead selection uses ROW_NUMBER with PARTITION BY patientacctifk,lsb_edipartnerfk,lsb_coverageid,lsb_id (NO hospitalfk). This means deduplication happens across ALL hospitals per patient account - if a patient account has leads from Hospital A and Hospital B, only ONE best lead is selected (across both hospitals).
+```
+
+---
+
+## 3. DATABRICKS LOGIC SHEET - Row 11, Column 6
+
+**Current text says:**
+```
+Step 17: Performs best lead selection - ROW_NUMBER by (patientacctifk, lsb_edipartnerfk, lsb_coverageid, lsb_id) ORDER BY lsb_demoupdatedate DESC, demohash DESC, then by keyvalue ASC, edidatasourcetablekey.
+```
+
+**REPLACE Step 17 with this (more accurate):**
+```
+Step 17: Performs best lead selection - Uses ROW_NUMBER window function for deduplication. First window: PARTITION BY patientacctifk,hospitalfk,lsb_edipartnerfk,lsb_coverageid,lsb_id (INCLUDES hospitalfk) ORDER BY lsb_demoupdatedate DESC, demohash DESC, lsb_leadsourcevalue ASC, lsb_xrefsourcevalue ASC. Second window: PARTITION BY patientacctifk,hospitalfk,lsb_edipartnerfk,upper(trim(lsb_coverageid)),rn ORDER BY keyvalue ASC, edidatasourcetablekey. INCLUDES hospitalfk in PARTITION BY, meaning deduplication happens separately per hospital for the same patient account (one best lead selected per patient account per hospital). Also normalizes coverage ID with upper(trim()).
+```
+
+**OR if you prefer to just ADD at the end (easier):**
+
+**ADD THIS at the end of Column 6 (after Step 18):**
+```
+Step 17 DETAIL: Best lead selection uses ROW_NUMBER with PARTITION BY patientacctifk,hospitalfk,lsb_edipartnerfk,lsb_coverageid,lsb_id (INCLUDES hospitalfk). This means deduplication happens separately PER HOSPITAL per patient account - if a patient account has leads from Hospital A and Hospital B, TWO best leads are selected (one from each hospital). Also uses upper(trim(lsb_coverageid)) for coverage ID normalization in second window.
+```
+
+---
+
+## 🎯 RECOMMENDED APPROACH
+
+### Option A: Replace the Step (More Accurate)
+- **Hadoop Logic Row 17:** Replace Step 14 text with the detailed version above
+- **Databricks Logic Row 11:** Replace Step 17 text with the detailed version above
+
+### Option B: Add Detail at End (Easier)
+- **Hadoop Logic Row 17:** Add "Step 14 DETAIL" at the end
+- **Databricks Logic Row 11:** Add "Step 17 DETAIL" at the end
+
+**I recommend Option B** - it's easier and doesn't require finding/replacing text in the middle of a long description.
+
+---
+
+## 📋 QUICK CHECKLIST
+
+- [ ] **Logic Comparison Sheet - Row 10**
+  - [ ] Add to Column 2 (Hadoop)
+  - [ ] Add to Column 3 (Databricks)
+  - [ ] Add to Column 5 (Gaps/Notes)
+
+- [ ] **Hadoop Logic Sheet - Row 17, Column 6**
+  - [ ] Add "Step 14 DETAIL" at the end (or replace Step 14)
+
+- [ ] **Databricks Logic Sheet - Row 11, Column 6**
+  - [ ] Add "Step 17 DETAIL" at the end (or replace Step 17)
+
+---
+
+## 💡 WHY THIS MATTERS
+
+**The Difference:**
+- **Hadoop:** Patient with leads from Hospital A and Hospital B → **1 lead selected** (best across both)
+- **Databricks:** Patient with leads from Hospital A and Hospital B → **2 leads selected** (one from each hospital)
+
+**Impact:**
+- Different lead counts in output
+- Different lead selection logic
+- Different downstream data volumes
+
+Now clients can find this documented in **all three places**!
+
