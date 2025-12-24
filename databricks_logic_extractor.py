@@ -140,7 +140,7 @@ class DatabricksLogicExtractor:
 
         # Known ADF pipeline base locations
         base_paths = [
-            "/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/Databricks_repo/app-insleads-adf/adf/pipeline",
+            "./Databricks_repo/adf/pipeline",
             "/Users/ankurshome/Desktop/Hadoop_Parser/CodebaseIntelligence/Databricks_repo/*/adf/pipeline",
         ]
 
@@ -1694,6 +1694,7 @@ class DatabricksLogicExtractor:
                         activity['inputs'] = enriched_info.get('inputs', activity.get('inputs', []))
                         activity['outputs'] = enriched_info.get('outputs', activity.get('outputs', []))
                         activity['column_schemas'] = enriched_info.get('column_schemas', {})  # CRITICAL: Add column schemas!
+                        activity['ai_column_lineage'] = enriched_info.get('ai_column_lineage', [])  # CRITICAL: Add AI column lineage for STTM!
                 else:
                     # Fallback to basic code snippet extraction
                     code_snippets = self._search_notebook_code(notebook_path)
@@ -1798,6 +1799,16 @@ class DatabricksLogicExtractor:
                 step_count = len(enriched_info.get('step_by_step_logic', []))
                 snippet_count = len(enriched_info.get('code_snippets', []))
                 logger.info(f"   ✅ AI extracted {step_count} steps, {snippet_count} snippets for {notebook_path}")
+
+                # STEP 5: Extract AI-based column lineage for STTM
+                logger.debug(f"   🔍 Extracting AI-based column lineage...")
+                activity_name = Path(notebook_path).stem  # Use notebook name as activity name
+                ai_column_lineage = self.extract_column_lineage_with_ai(
+                    notebook_path=notebook_path,
+                    notebook_content=full_content,
+                    activity_name=activity_name
+                )
+                enriched_info['ai_column_lineage'] = ai_column_lineage
         else:
             logger.debug(f"   ⚠ No AI analyzer - using only structural column extraction")
 
@@ -2169,6 +2180,118 @@ Return a structured JSON array with this format:
             'conditional_branches': {},
             'total_activities': 0
         }
+
+    def extract_column_lineage_with_ai(self, notebook_path: str, notebook_content: str, activity_name: str) -> List[Dict[str, Any]]:
+        """
+        Extract column-level STTM mappings using AI analysis of PySpark code
+
+        Returns list of column mappings like:
+        {
+            'source_table': 'patientaccts',
+            'source_column': 'patientacctipk',
+            'target_table': 'hdppatientacctxlead',
+            'target_column': 'patientacctifk',
+            'transformation': 'Direct mapping',
+            'data_type': 'bigint'
+        }
+        """
+        if not self.ai_analyzer or not self.ai_analyzer.enabled:
+            logger.debug(f"   ⚠ AI analyzer not available for column lineage extraction")
+            return []
+
+        try:
+            prompt = f"""
+Analyze this Databricks PySpark notebook and extract DETAILED column-level lineage (Source-to-Target Mapping).
+
+Notebook: {notebook_path}
+Activity: {activity_name}
+
+Code:
+{notebook_content[:80000]}
+
+Extract ALL column-level mappings in this format:
+
+For each transformation, identify:
+1. Source table/file being read (from spark.read, spark.table, etc.)
+2. Source columns (from .select(), column references, .withColumn())
+3. Target table/file being written (from .write, saveAsTable, etc.)
+4. Target columns (column names in output)
+5. Transformation logic (how source maps to target)
+
+Example expected output:
+```json
+{{
+  "column_mappings": [
+    {{
+      "source_table": "patientaccts",
+      "source_column": "patientacctipk",
+      "target_table": "hdppatientacctxlead",
+      "target_column": "patientacctifk",
+      "transformation": "Direct mapping - renamed",
+      "data_type": "bigint",
+      "is_derived": false
+    }},
+    {{
+      "source_table": "hospitals",
+      "source_column": "hospitalname",
+      "target_table": "hdppatientacctxlead",
+      "target_column": "hospitalname",
+      "transformation": "Joined from hospitals table on hospitalfk",
+      "data_type": "string",
+      "is_derived": false
+    }},
+    {{
+      "source_table": "Generated",
+      "source_column": "N/A",
+      "target_table": "hdppatientacctxlead",
+      "target_column": "uniqueid",
+      "transformation": "Generated using monotonically_increasing_id()",
+      "data_type": "bigint",
+      "is_derived": true
+    }}
+  ]
+}}
+```
+
+IMPORTANT:
+- Extract EVERY column that is read, transformed, and written
+- Include columns from joins (mark which table they come from)
+- Include derived/calculated columns (mark as is_derived: true, source_table: "Generated")
+- Trace columns through multiple transformations
+- If notebook reads multiple source tables and writes to multiple targets, create mappings for ALL combinations
+- Be exhaustive - aim for 10-50+ column mappings per notebook
+
+Return ONLY the JSON with column_mappings array.
+"""
+
+            ai_response = self.ai_analyzer.analyze_code(
+                code=notebook_content[:80000],
+                context=prompt,
+                analysis_type="column_lineage_extraction"
+            )
+
+            # Parse JSON response
+            import json
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', ai_response, re.DOTALL)
+            if json_match:
+                parsed = json.loads(json_match.group(1))
+                mappings = parsed.get('column_mappings', [])
+                logger.info(f"   ✅ AI extracted {len(mappings)} column mappings from {notebook_path}")
+                return mappings
+            else:
+                # Try direct JSON parse
+                try:
+                    parsed = json.loads(ai_response)
+                    mappings = parsed.get('column_mappings', [])
+                    logger.info(f"   ✅ AI extracted {len(mappings)} column mappings from {notebook_path}")
+                    return mappings
+                except:
+                    logger.warning(f"   ⚠ Could not parse AI response for column lineage")
+                    return []
+
+        except Exception as e:
+            logger.error(f"   ❌ Failed to extract column lineage with AI: {e}")
+            return []
 
 
 # Example usage

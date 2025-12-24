@@ -134,6 +134,304 @@ class ExcelGenerator:
             logger.info(f"✅ Excel file saved (fallback): {fallback_path}")
             return fallback_path
 
+    def generate_databricks_documentation_excel(
+        self,
+        pipeline_name: str,
+        databricks_logic: Dict[str, Any],
+        business_stages: List[Dict[str, Any]],
+        output_folder: str = "outputs/databricks_documentation",
+        timestamp: str = None
+    ) -> str:
+        """
+        Generate single-system Databricks documentation Excel (no comparison)
+
+        Args:
+            pipeline_name: Databricks pipeline name
+            databricks_logic: Databricks logic extraction result
+            business_stages: Business stage abstractions
+            output_folder: Output directory
+            timestamp: Optional timestamp for filename
+
+        Returns:
+            Path to generated Excel file
+        """
+        logger.info(f"📊 Generating Databricks documentation: {pipeline_name}")
+
+        # Create workbook
+        wb = Workbook()
+        wb.remove(wb.active)  # Remove default sheet
+
+        # Sheet 1: Overview (business stages)
+        logger.info("   Creating Overview sheet...")
+        ws_overview = wb.create_sheet("Overview")
+        self._create_databricks_overview_sheet(ws_overview, pipeline_name, business_stages)
+
+        # Sheet 2: Logic (detailed activities) - use existing method which creates its own sheet
+        logger.info("   Creating Logic sheet...")
+        self._create_databricks_logic_sheet(wb, databricks_logic)
+
+        # Sheet 3: STTM (column mappings from activities)
+        logger.info("   Creating STTM sheet...")
+        ws_sttm = wb.create_sheet("STTM")
+        self._create_databricks_sttm_sheet(ws_sttm, databricks_logic, pipeline_name)
+
+        # Save workbook
+        if not timestamp:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Clean pipeline name for filename
+        safe_pipeline = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in pipeline_name)[:50]
+        filename = f"Databricks_Documentation_{safe_pipeline}_{timestamp}.xlsx"
+        output_path = os.path.join(output_folder, filename)
+
+        os.makedirs(output_folder, exist_ok=True)
+
+        try:
+            wb.save(output_path)
+            logger.info(f"✅ Databricks documentation Excel saved: {output_path}")
+            return output_path
+        except Exception as e:
+            logger.error(f"❌ Failed to save Excel: {e}")
+            fallback_path = os.path.join(output_folder, f"Databricks_Doc_{timestamp}.xlsx")
+            wb.save(fallback_path)
+            return fallback_path
+
+    def _create_databricks_overview_sheet(
+        self,
+        ws,
+        pipeline_name: str,
+        business_stages: List[Dict[str, Any]]
+    ):
+        """Create overview sheet for single-system Databricks documentation"""
+        # Header
+        ws.append(["Databricks Pipeline Documentation"])
+        ws.merge_cells('A1:D1')
+        ws['A1'].font = Font(bold=True, size=14)
+        ws['A1'].alignment = Alignment(horizontal='center')
+
+        ws.append([])
+        ws.append(["Pipeline Name:", pipeline_name])
+        ws['B3'].font = Font(bold=True)
+
+        ws.append([])
+        ws.append(["Business Stage", "Description", "Activities", "Purpose"])
+
+        # Format header row
+        for col in range(1, 5):
+            cell = ws.cell(row=5, column=col)
+            cell.fill = self.header_fill
+            cell.font = self.header_font
+            cell.border = self.border
+
+        # Add business stages
+        for stage in business_stages:
+            ws.append([
+                stage.get('stage_name', stage.get('stage', '')),
+                stage.get('databricks_description', stage.get('description', '')),
+                stage.get('databricks_description', '')[:50] + '...' if len(stage.get('databricks_description', '')) > 50 else stage.get('databricks_description', ''),
+                stage.get('notes', stage.get('business_purpose', ''))
+            ])
+
+        # Auto-adjust column widths
+        for col in range(1, 5):
+            ws.column_dimensions[get_column_letter(col)].width = 25
+
+        ws.freeze_panes = 'A6'
+
+    def _create_databricks_sttm_sheet(
+        self,
+        ws,
+        databricks_logic: Dict[str, Any],
+        pipeline_name: str
+    ):
+        """Create STTM sheet for Databricks-only documentation with detailed column mappings"""
+        # Header
+        ws.append([f"Databricks Pipeline STTM: {pipeline_name}"])
+        ws.merge_cells('A1:F1')
+        ws['A1'].font = Font(bold=True, size=14, color="FFFFFF")
+        ws['A1'].fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+        ws['A1'].alignment = Alignment(horizontal='center')
+
+        ws.append([])
+        # Standard STTM columns as per user specification
+        headers = [
+            "Id", "Processing Order", "Schema", "Source Dataset Name",
+            "Source Field Name", "Target Table/File Name", "Target Field Name",
+            "Target Field Data Type", "pk?", "contains_pii", "Field Type",
+            "Field Depends On", "Pre Processing Rules", "Field Definition"
+        ]
+        ws.append(headers)
+
+        # Format header
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=3, column=col)
+            cell.fill = self.header_fill
+            cell.font = self.header_font
+            cell.border = self.border
+            cell.alignment = Alignment(wrap_text=True, vertical='top')
+
+        # Extract STTM from activities
+        activities = databricks_logic.get('activities', [])
+        row_count = 0
+        field_id = 1
+
+        for act_idx, activity in enumerate(activities, 1):
+            # Safety check: ensure activity is a dict
+            if not isinstance(activity, dict):
+                logger.warning(f"   ⚠ Activity {act_idx} is not a dict, skipping: {activity}")
+                continue
+
+            activity_name = activity.get('name', 'Unknown')
+
+            # Get notebook path from activity (NOT from details)
+            notebook_path = activity.get('notebook', activity.get('path', 'N/A'))
+
+            # PRIORITY 1: Use AI-extracted column lineage (most accurate)
+            ai_column_lineage = activity.get('ai_column_lineage', [])
+
+            if ai_column_lineage:
+                # Use AI-extracted column lineage (like reference Excel format)
+                logger.info(f"      Using AI column lineage for {activity_name}: {len(ai_column_lineage)} mappings")
+                for mapping in ai_column_lineage:
+                    source_table = mapping.get('source_table', 'Unknown')
+                    source_column = mapping.get('source_column', 'Unknown')
+                    target_table = mapping.get('target_table', 'Unknown')
+                    target_column = mapping.get('target_column', 'Unknown')
+                    transformation = mapping.get('transformation', '')
+                    data_type = mapping.get('data_type', 'Unknown')
+                    is_derived = mapping.get('is_derived', False)
+
+                    # Extract schema from table name if available
+                    if '.' in source_table:
+                        schema = source_table.split('.')[0]
+                    else:
+                        schema = 'default'
+
+                    ws.append([
+                        field_id,  # Id
+                        act_idx,  # Processing Order
+                        schema,  # Schema
+                        source_table,  # Source Dataset Name
+                        source_column,  # Source Field Name
+                        target_table,  # Target Table/File Name
+                        target_column,  # Target Field Name
+                        data_type,  # Target Field Data Type
+                        '',  # pk?
+                        '',  # contains_pii
+                        'Derived' if is_derived else 'Direct',  # Field Type
+                        '',  # Field Depends On
+                        transformation,  # Pre Processing Rules
+                        f'Activity: {activity_name}'  # Field Definition
+                    ])
+                    field_id += 1
+                    row_count += 1
+
+            else:
+                # PRIORITY 2: Fall back to structural column schemas
+                column_schemas = activity.get('column_schemas', [])
+                input_tables = activity.get('inputs', [])
+                output_tables = activity.get('outputs', [])
+
+                if column_schemas:
+                    # Activity has detailed column-level schema information
+                    for schema in column_schemas:
+                        table_name = schema.get('table_name', 'Unknown')
+                        columns = schema.get('columns', [])
+                        is_output = schema.get('is_output', False)
+
+                        # Iterate through each column
+                        for col in columns:
+                            if isinstance(col, dict):
+                                col_name = col.get('name', 'Unknown')
+                                col_type = col.get('type', col.get('data_type', 'Unknown'))
+                            else:
+                                col_name = str(col)
+                                col_type = 'Unknown'
+
+                            # Create STTM row with all 14 columns
+                            if is_output:
+                                # Output table - this is a target
+                                ws.append([
+                                    field_id,  # Id
+                                    act_idx,  # Processing Order
+                                    table_name.split('.')[0] if '.' in table_name else 'default',  # Schema
+                                    ', '.join(input_tables[:2]) if input_tables else 'Multiple',  # Source Dataset
+                                    col_name,  # Source Field Name (assumed same in transform)
+                                    table_name,  # Target Table/File Name
+                                    col_name,  # Target Field Name
+                                    col_type,  # Target Field Data Type
+                                    '',  # pk?
+                                    '',  # contains_pii
+                                    'Derived',  # Field Type
+                                    '',  # Field Depends On
+                                    f'Transformed via {notebook_path}',  # Pre Processing Rules
+                                    f'Field from activity: {activity_name}'  # Field Definition
+                                ])
+                            else:
+                                # Input table - this is a source
+                                ws.append([
+                                    field_id,  # Id
+                                    act_idx,  # Processing Order
+                                    table_name.split('.')[0] if '.' in table_name else 'default',  # Schema
+                                    table_name,  # Source Dataset Name
+                                    col_name,  # Source Field Name
+                                    ', '.join(output_tables[:2]) if output_tables else 'TBD',  # Target Table
+                                    col_name,  # Target Field Name (assumed same)
+                                    col_type,  # Target Field Data Type
+                                    '',  # pk?
+                                    '',  # contains_pii
+                                    'Source',  # Field Type
+                                    '',  # Field Depends On
+                                    f'Loaded from {table_name}',  # Pre Processing Rules
+                                    f'Source field from {activity_name}'  # Field Definition
+                                ])
+
+                            field_id += 1
+                            row_count += 1
+                elif input_tables or output_tables:
+                    # Table-level mapping only (no column details)
+                    for in_table in (input_tables if input_tables else ['N/A']):
+                        for out_table in (output_tables if output_tables else ['N/A']):
+                            ws.append([
+                                field_id,  # Id
+                                act_idx,  # Processing Order
+                                in_table.split('.')[0] if '.' in in_table else 'default',  # Schema
+                                in_table,  # Source Dataset Name
+                                '*',  # Source Field Name (all fields)
+                                out_table,  # Target Table/File Name
+                                '*',  # Target Field Name (all fields)
+                                'Various',  # Target Field Data Type
+                                '',  # pk?
+                                '',  # contains_pii
+                                'Bulk Transform',  # Field Type
+                                '',  # Field Depends On
+                                f'Notebook: {notebook_path}',  # Pre Processing Rules
+                                f'Activity: {activity_name}'  # Field Definition
+                            ])
+                            field_id += 1
+                            row_count += 1
+
+        # If no mappings found, add informative message
+        if row_count == 0:
+            ws.append([
+                "No STTM data available",
+                "Run with schema analysis to extract detailed column mappings",
+                "",
+                "",
+                "",
+                ""
+            ])
+            ws.merge_cells(f'A4:F4')
+            ws['A4'].alignment = Alignment(horizontal='center')
+            ws['A4'].font = Font(italic=True, color="666666")
+
+        # Auto-adjust columns for all 14 STTM columns
+        column_widths = [8, 15, 12, 30, 25, 30, 25, 20, 8, 12, 15, 20, 30, 30]
+        for idx, width in enumerate(column_widths, 1):
+            ws.column_dimensions[get_column_letter(idx)].width = width
+
+        ws.freeze_panes = 'A4'
+
     def _create_overview_sheet(
         self,
         wb: Workbook,
