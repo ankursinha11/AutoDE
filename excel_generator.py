@@ -275,141 +275,160 @@ class ExcelGenerator:
         row_count = 0
         field_id = 1
 
-        for act_idx, activity in enumerate(activities, 1):
-            # Safety check: ensure activity is a dict
-            if not isinstance(activity, dict):
-                logger.warning(f"   ⚠ Activity {act_idx} is not a dict, skipping: {activity}")
-                continue
+        try:
+            for act_idx, activity in enumerate(activities, 1):
+                # Safety check: ensure activity is a dict
+                if not isinstance(activity, dict):
+                    logger.warning(f"   ⚠ Activity {act_idx} is not a dict, skipping: {activity}")
+                    continue
 
-            activity_name = activity.get('name', 'Unknown')
+                activity_name = activity.get('name', 'Unknown')
 
-            # Get notebook path from activity (NOT from details)
-            notebook_path = activity.get('notebook', activity.get('path', 'N/A'))
+                # Get notebook path from activity (NOT from details)
+                notebook_path = activity.get('notebook', activity.get('path', 'N/A'))
 
-            # PRIORITY 1: Use AI-extracted column lineage (most accurate)
-            ai_column_lineage = activity.get('ai_column_lineage', [])
+                # PRIORITY 1: Use AI-extracted column lineage (most accurate)
+                ai_column_lineage = activity.get('ai_column_lineage', [])
 
-            if ai_column_lineage:
-                # Use AI-extracted column lineage (like reference Excel format)
-                logger.info(f"      Using AI column lineage for {activity_name}: {len(ai_column_lineage)} mappings")
-                for mapping in ai_column_lineage:
-                    source_table = mapping.get('source_table', 'Unknown')
-                    source_column = mapping.get('source_column', 'Unknown')
-                    target_table = mapping.get('target_table', 'Unknown')
-                    target_column = mapping.get('target_column', 'Unknown')
-                    transformation = mapping.get('transformation', '')
-                    data_type = mapping.get('data_type', 'Unknown')
-                    is_derived = mapping.get('is_derived', False)
+                if ai_column_lineage:
+                    # Use AI-extracted column lineage (like reference Excel format)
+                    logger.info(f"      Using AI column lineage for {activity_name}: {len(ai_column_lineage)} mappings")
+                    for mapping in ai_column_lineage:
+                        # Safety check: ensure mapping is a dict
+                        if not isinstance(mapping, dict):
+                            logger.warning(f"      ⚠ Skipping non-dict mapping in {activity_name}: {mapping}")
+                            continue
 
-                    # Extract schema from table name if available
-                    if '.' in source_table:
-                        schema = source_table.split('.')[0]
-                    else:
-                        schema = 'default'
+                        source_table = mapping.get('source_table', 'Unknown')
+                        source_column = mapping.get('source_column', 'Unknown')
+                        target_table = mapping.get('target_table', 'Unknown')
+                        target_column = mapping.get('target_column', 'Unknown')
+                        transformation = mapping.get('transformation', '')
+                        data_type = mapping.get('data_type', 'Unknown')
+                        is_derived = mapping.get('is_derived', False)
 
-                    ws.append([
-                        field_id,  # Id
-                        act_idx,  # Processing Order
-                        schema,  # Schema
-                        source_table,  # Source Dataset Name
-                        source_column,  # Source Field Name
-                        target_table,  # Target Table/File Name
-                        target_column,  # Target Field Name
-                        data_type,  # Target Field Data Type
-                        '',  # pk?
-                        '',  # contains_pii
-                        'Derived' if is_derived else 'Direct',  # Field Type
-                        '',  # Field Depends On
-                        transformation,  # Pre Processing Rules
-                        f'Activity: {activity_name}'  # Field Definition
-                    ])
-                    field_id += 1
-                    row_count += 1
+                        # Extract schema from table name if available
+                        if '.' in source_table:
+                            schema = source_table.split('.')[0]
+                        else:
+                            schema = 'default'
 
-            else:
-                # PRIORITY 2: Fall back to structural column schemas
-                column_schemas = activity.get('column_schemas', [])
-                input_tables = activity.get('inputs', [])
-                output_tables = activity.get('outputs', [])
+                        ws.append([
+                            field_id,  # Id
+                            act_idx,  # Processing Order
+                            schema,  # Schema
+                            source_table,  # Source Dataset Name
+                            source_column,  # Source Field Name
+                            target_table,  # Target Table/File Name
+                            target_column,  # Target Field Name
+                            data_type,  # Target Field Data Type
+                            '',  # pk?
+                            '',  # contains_pii
+                            'Derived' if is_derived else 'Direct',  # Field Type
+                            '',  # Field Depends On
+                            transformation,  # Pre Processing Rules
+                            f'Activity: {activity_name}'  # Field Definition
+                        ])
+                        field_id += 1
+                        row_count += 1
 
-                if column_schemas:
-                    # Activity has detailed column-level schema information
-                    for schema in column_schemas:
-                        table_name = schema.get('table_name', 'Unknown')
-                        columns = schema.get('columns', [])
-                        is_output = schema.get('is_output', False)
+                else:
+                    # PRIORITY 2: Fall back to structural column schemas
+                    column_schemas = activity.get('column_schemas', [])
+                    input_tables = activity.get('inputs', [])
+                    output_tables = activity.get('outputs', [])
 
-                        # Iterate through each column
-                        for col in columns:
-                            if isinstance(col, dict):
-                                col_name = col.get('name', 'Unknown')
-                                col_type = col.get('type', col.get('data_type', 'Unknown'))
-                            else:
-                                col_name = str(col)
-                                col_type = 'Unknown'
+                    if column_schemas:
+                        # Activity has detailed column-level schema information
+                        for schema in column_schemas:
+                            table_name = schema.get('table_name', 'Unknown')
+                            columns = schema.get('columns', [])
+                            is_output = schema.get('is_output', False)
 
-                            # Create STTM row with all 14 columns
-                            if is_output:
-                                # Output table - this is a target
+                            # Iterate through each column
+                            for col in columns:
+                                if isinstance(col, dict):
+                                    col_name = col.get('name', 'Unknown')
+                                    col_type = col.get('type', col.get('data_type', 'Unknown'))
+                                else:
+                                    col_name = str(col)
+                                    col_type = 'Unknown'
+
+                                # Create STTM row with all 14 columns
+                                if is_output:
+                                    # Output table - this is a target
+                                    ws.append([
+                                        field_id,  # Id
+                                        act_idx,  # Processing Order
+                                        table_name.split('.')[0] if '.' in table_name else 'default',  # Schema
+                                        ', '.join(input_tables[:2]) if input_tables else 'Multiple',  # Source Dataset
+                                        col_name,  # Source Field Name (assumed same in transform)
+                                        table_name,  # Target Table/File Name
+                                        col_name,  # Target Field Name
+                                        col_type,  # Target Field Data Type
+                                        '',  # pk?
+                                        '',  # contains_pii
+                                        'Derived',  # Field Type
+                                        '',  # Field Depends On
+                                        f'Transformed via {notebook_path}',  # Pre Processing Rules
+                                        f'Field from activity: {activity_name}'  # Field Definition
+                                    ])
+                                else:
+                                    # Input table - this is a source
+                                    ws.append([
+                                        field_id,  # Id
+                                        act_idx,  # Processing Order
+                                        table_name.split('.')[0] if '.' in table_name else 'default',  # Schema
+                                        table_name,  # Source Dataset Name
+                                        col_name,  # Source Field Name
+                                        ', '.join(output_tables[:2]) if output_tables else 'TBD',  # Target Table
+                                        col_name,  # Target Field Name (assumed same)
+                                        col_type,  # Target Field Data Type
+                                        '',  # pk?
+                                        '',  # contains_pii
+                                        'Source',  # Field Type
+                                        '',  # Field Depends On
+                                        f'Loaded from {table_name}',  # Pre Processing Rules
+                                        f'Source field from {activity_name}'  # Field Definition
+                                    ])
+
+                                field_id += 1
+                                row_count += 1
+                    elif input_tables or output_tables:
+                        # Table-level mapping only (no column details)
+                        for in_table in (input_tables if input_tables else ['N/A']):
+                            for out_table in (output_tables if output_tables else ['N/A']):
                                 ws.append([
                                     field_id,  # Id
                                     act_idx,  # Processing Order
-                                    table_name.split('.')[0] if '.' in table_name else 'default',  # Schema
-                                    ', '.join(input_tables[:2]) if input_tables else 'Multiple',  # Source Dataset
-                                    col_name,  # Source Field Name (assumed same in transform)
-                                    table_name,  # Target Table/File Name
-                                    col_name,  # Target Field Name
-                                    col_type,  # Target Field Data Type
+                                    in_table.split('.')[0] if '.' in in_table else 'default',  # Schema
+                                    in_table,  # Source Dataset Name
+                                    '*',  # Source Field Name (all fields)
+                                    out_table,  # Target Table/File Name
+                                    '*',  # Target Field Name (all fields)
+                                    'Various',  # Target Field Data Type
                                     '',  # pk?
                                     '',  # contains_pii
-                                    'Derived',  # Field Type
+                                    'Bulk Transform',  # Field Type
                                     '',  # Field Depends On
-                                    f'Transformed via {notebook_path}',  # Pre Processing Rules
-                                    f'Field from activity: {activity_name}'  # Field Definition
+                                    f'Notebook: {notebook_path}',  # Pre Processing Rules
+                                    f'Activity: {activity_name}'  # Field Definition
                                 ])
-                            else:
-                                # Input table - this is a source
-                                ws.append([
-                                    field_id,  # Id
-                                    act_idx,  # Processing Order
-                                    table_name.split('.')[0] if '.' in table_name else 'default',  # Schema
-                                    table_name,  # Source Dataset Name
-                                    col_name,  # Source Field Name
-                                    ', '.join(output_tables[:2]) if output_tables else 'TBD',  # Target Table
-                                    col_name,  # Target Field Name (assumed same)
-                                    col_type,  # Target Field Data Type
-                                    '',  # pk?
-                                    '',  # contains_pii
-                                    'Source',  # Field Type
-                                    '',  # Field Depends On
-                                    f'Loaded from {table_name}',  # Pre Processing Rules
-                                    f'Source field from {activity_name}'  # Field Definition
-                                ])
+                                field_id += 1
+                                row_count += 1
 
-                            field_id += 1
-                            row_count += 1
-                elif input_tables or output_tables:
-                    # Table-level mapping only (no column details)
-                    for in_table in (input_tables if input_tables else ['N/A']):
-                        for out_table in (output_tables if output_tables else ['N/A']):
-                            ws.append([
-                                field_id,  # Id
-                                act_idx,  # Processing Order
-                                in_table.split('.')[0] if '.' in in_table else 'default',  # Schema
-                                in_table,  # Source Dataset Name
-                                '*',  # Source Field Name (all fields)
-                                out_table,  # Target Table/File Name
-                                '*',  # Target Field Name (all fields)
-                                'Various',  # Target Field Data Type
-                                '',  # pk?
-                                '',  # contains_pii
-                                'Bulk Transform',  # Field Type
-                                '',  # Field Depends On
-                                f'Notebook: {notebook_path}',  # Pre Processing Rules
-                                f'Activity: {activity_name}'  # Field Definition
-                            ])
-                            field_id += 1
-                            row_count += 1
+        except Exception as e:
+            logger.error(f"   ⚠ Error processing STTM data: {str(e)}")
+            logger.exception(e)
+            # Add error message to sheet
+            ws.append([
+                "Error extracting STTM data",
+                f"Error: {str(e)}",
+                "",
+                "",
+                "",
+                ""
+            ])
 
         # If no mappings found, add informative message
         if row_count == 0:
