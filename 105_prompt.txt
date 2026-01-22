@@ -1,0 +1,731 @@
+
+​## Context
+You are analyzing a migration from Ab-Initio to Databricks that occurred 3 years ago. Your task is to validate completeness and correctness of the migration by comparing logic and data flows for the **105_CDD_CommGen_VSnapPatientAcctsFlags_GlobalMRNxPacct_PatientAcctsXRefPermID_ClusteredAccts_PatientAcctCommercialHelpers_EdiMessages.pset** graph.
+
+## Source Materials
+
+### Ab-Initio Graph
+- **Graph Name**: 105_CDD_CommGen_VSnapPatientAcctsFlags_GlobalMRNxPacct_PatientAcctsXRefPermID_ClusteredAccts_PatientAcctCommercialHelpers_EdiMessages.pset
+- **Documentation**: 105_artifacts_updated.xlsx (provided - contains field mapping and 17 transformation steps)
+- **Graph Files**: Located in `/Abinitio/Commercial/105/`
+
+### Databricks Implementation: Databricks repo- @databricks_repos - /Abinitio/Commercial/adf
+
+The Ab-Initio graph logic is distributed across **5 pipelines** (Lead Discovery System):
+1. **pl_leaddiscovery_globalmrn_assign** (Identity Producer - GMRN/PermID Assignment)
+2. **pl_leaddiscovery_known_commercial** (Candidate Selector - Commercial Insurance Discovery)
+3. **pl_leaddiscovery_leadlookup_knowncommercial** (Lead Generator - Multi-attribute Identity Lookup)
+4. **pl_leaddiscovery_leadverify** (Quality Gate - Lead Verification)
+5. **pl_leaddiscovery_lead_propagation** (Distributor - Final EDI Push)
+
+**Pipeline Flow**:
+```
+BATCH START
+    │
+    └─→ pl_leaddiscovery_globalmrn_assign (Identity Producer)
+            │
+            └─→ pl_leaddiscovery_known_commercial (Candidate Selector)
+                    │
+                    └─→ pl_leaddiscovery_leadlookup_knowncommercial (Lead Generator)
+                            │
+                            ├─→ Parallel Identity Lookups:
+                            │   ├─→ GlobalMRN Lookup
+                            │   ├─→ PermID Lookup
+                            │   ├─→ SSN Lookup
+                            │   ├─→ MRN Lookup
+                            │   └─→ ClusteredAcctFK Lookup
+                            │
+                            └─→ pl_leaddiscovery_leadverify (Quality Gate)
+                                    │
+                                    └─→ pl_leaddiscovery_lead_propagation (Distributor)
+                                            │
+                                            └─→ EDI System (hdppatientacctxlead)
+```
+
+**Databricks Repository**: `@CodebaseIntelligence/Databricks_repo`
+
+---
+
+## CRITICAL: PHASED ANALYSIS APPROACH
+
+⚠️ **THIS IS A MULTI-PIPELINE ANALYSIS - YOU MUST COMPLETE ALL PHASES SEQUENTIALLY**
+
+Given the complexity of mapping one Ab-Initio graph across 5 Databricks pipelines, you **MUST** work through this analysis in distinct phases. **DO NOT skip phases or rush through pipelines.** Each phase builds on the previous one.
+
+### Execution Strategy:
+1. **Complete each phase fully before moving to the next**
+2. **Document findings from each phase before proceeding**
+3. **For each pipeline, analyze ALL notebooks thoroughly**
+4. **Take time to search for missing logic across the entire repository**
+5. **Build the mapping incrementally - don't try to do everything at once**
+
+---
+
+## PHASE 1: Understand Ab-Initio Logic (COMPLETE THIS FIRST)
+
+### Objective: Extract and document the complete Ab-Initio transformation logic
+
+**From: /Abinitio/Commercial/105/105_artifacts_updated.xlsx**
+
+### 1.1 Input Datasets
+Document all source tables mentioned:
+- VSnapPatientAcctsFlags (primary source for patient account flags)
+- PatientAccts (patient account data)
+- GlobalMRNxPacct (Global MRN cross-reference)
+- PatientAcctsXRefPermID (PermID cross-reference)
+- ClusteredAccts (clustered account data with demographics)
+- PatientAcctCommercialHelpers (commercial insurance helpers)
+- EdiMessages (EDI message data)
+- Lookup tables:
+  - lkpEdiJobs
+  - lkpEdiSubmitters
+  - lkpEdiPartners
+  - lkpHospitalProviderNums
+  - EDIPayersXStateInsuranceNames
+  - GlobalMRNxHospInsuranceCodes
+
+### 1.2 Output Datasets
+- **ediGenPatientAccts.txt** (patient accounts for downstream processing)
+- **ediComGenVSnapGlobalMRNxPacct.idx/lkp** (GlobalMRN lookup file)
+- **ediComGenPatientAcctsXRefPermIDJoin.idx/lkp** (PermID join lookup)
+- **ediComGenPatientAcctsXRefPermID.idx/lkp** (PermID lookup)
+- **ediGenClusteredAccts.lkp** (encrypted clustered accounts)
+- **ediGenPatientAcctCommercialHelpers.idx/lkp** (commercial helpers lookup)
+- **lkpEdiSubmitterBacklog** (submitter backlog lookup)
+- **lkpEdiPartnerBacklog** (partner backlog lookup)
+
+### 1.3 Transformation Steps (17 Steps from Excel)
+Document each step in detail:
+
+**Step 1: Read VSnapPatientAcctsFlags**
+- Purpose: Initial data read from VSnapPatientAcctsFlags source
+- Processing: Base file and Delta file processing
+
+**Step 2: Read PatientAccts**
+- Purpose: Read patient account master data
+- Processing: Read PatientAccts source
+
+**Step 3: Join Step 1 and Step 2**
+- Purpose: Inner join VSnapPatientAcctsFlags with PatientAccts
+- **Join Keys**: {hospitalfk, patientacctipk} and {hospitalfk, patientacctifk}
+- **Output**: Two flows - Flow 0 (VSnapPatientAcctsFlags) and Flow 1 (PatientAccts)
+
+**Step 4: Create ediGenPatientAccts.txt**
+- Purpose: Create output file for use in Graph 400
+- **Input**: Step 3 Flow 1 (PatientAccts data)
+
+**Step 5: Replicate Step 3 Flow 0**
+- Purpose: Split VSnapPatientAcctsFlags data into two flows (5a and 5b)
+- Processing: Using replicate component
+
+**Step 6: Read GlobalMRNxPacct**
+- Purpose: Read Global MRN cross-reference data
+- **Critical Filters**:
+  - hospitalfk >= 1000
+  - date_difference_days(now(), createdate) <= 1095 (last 3 years)
+  - isdeleted == 0
+
+**Step 7: Inner Join Step 5a with Step 6**
+- Purpose: Join VSnapPatientAcctsFlags with GlobalMRNxPacct
+- **Join Keys**: {hospitalfk, patientacctipk} and {hospitalfk, patientacctifk}
+- **Sort**: {globalmrnifk}
+- **Merge**: {globalmrnifk}
+- **Output**: Block compressed lookup file ediComGenVSnapGlobalMRNxPacct.idx/lkp
+
+**Step 8: Read PatientAcctsXRefPermID**
+- Purpose: Read PermID cross-reference data
+- **Filters**: isdeleted == 0
+
+**Step 9: Replicate PatientAcctsXRefPermID**
+- Purpose: Split into two flows (9a and 9b)
+
+**Step 10: Inner Join Step 8a with Step 5b**
+- Purpose: Join PatientAcctsXRefPermID with VSnapPatientAcctsFlags
+- **Join Keys**: {hospitalfk, patientacctipk} and {hospitalfk, patientacctifk}
+- **Sort**: {permid}
+- **Merge**: {permid}
+- **Output**: Block compressed lookup file ediComGenPatientAcctsXRefPermIDJoin.idx/lkp
+
+**Step 11: Process Step 8b**
+- Purpose: Create secondary PermID lookup
+- **Filter**: not is_null(tu_escan_patientacct_permidmappingrawfk)
+- **Output**: Block compressed lookup file ediComGenPatientAcctsXRefPermID.idx/lkp with keys {hospitalfk, patientacctifk}
+
+**Step 12: Read ClusteredAccts**
+- Purpose: Read clustered account data with demographics
+- **Filters**: isdeleted == 0
+- **Transformation**: Encrypt PII fields (firstname, middlename, lastname) using AES encryption
+- **Output**: ediGenClusteredAccts.lkp
+
+**Step 13: Read PatientAcctCommercialHelpers**
+- Purpose: Read commercial insurance helper data
+- **Filters**: isdeleted == 0
+
+**Step 14: Transform PatientAcctCommercialHelpers**
+- Purpose: Create demographics hash lookup
+- **Transformation**: string_to_hex(in.demographicshash) → demographicsHashString
+- **Output**: Block compressed lookup file ediGenPatientAcctCommercialHelpers.idx/lkp with keys {edipartnerfk, demographicsHashString}
+
+**Step 15: Read EdiMessages**
+- Purpose: Read EDI message data with job/submitter/partner enrichment
+- **Filters**: 
+  - isdeleted == 0
+  - generatedate > datetime_add(now(), -180) (last 180 days)
+  - currentstatus in [1, 2]
+- **Lookups**: Join with lkpEdiJobs, lkpEdiSubmitters, lkpEdiPartners
+
+**Step 16: EDI Submitter Backlog Processing (Step 15a)**
+- Purpose: Calculate backlog by submitter
+- **Filter**: first_defined(tHospitalProviderNums.enabled, 0)
+- **Sort Keys**: {edisubmitterfk, transportunit, maxunitsperday}
+- **Rollup**: Sum message counts and entities
+- **Output**: lkpEdiSubmitterBacklog.lkp with isBacklogFlag
+
+**Step 17: EDI Partner Backlog Processing (Step 15b)**
+- Purpose: Calculate backlog by partner
+- **Filter**: first_defined(tEdiPartners.demographicqueriesallowedflag, 0) == 1
+- **Sort Keys**: {edipartnerfk, transportunit, maxfilesperday}
+- **Rollup**: Sum message counts and entities
+- **Output**: lkpEdiPartnerBacklog.lkp with isBacklogFlag
+
+### 1.4 Field Transformations (Pre-Processing Rules)
+Document all field-level transformations from the Excel:
+- **demographicsHashString**: string_to_hex(demographicshash)
+- **Encrypted fields** (ClusteredAccts): encode_base64(encrypt_aes_simple(field, aes_key)) for firstname, middlename, lastname
+- **xRefHospitalfk**: Copy from join source hospitalfk
+- **xRefPatientacctifk**: Copy from join source patientacctifk
+
+**📝 DELIVERABLE FOR PHASE 1**: Create a detailed document summarizing:
+- All input sources
+- All 17 steps with complete transformation logic
+- All filter rules and lookup validations
+- All field transformations
+- Expected output schema and lookup files
+
+---
+
+## PHASE 2: Analyze Databricks Pipeline 1 - pl_leaddiscovery_globalmrn_assign
+
+### Objective: Deep dive into the first pipeline (Identity Producer)
+
+**DO NOT MOVE TO PHASE 3 UNTIL THIS IS COMPLETE**
+
+### 2.1 Pipeline Overview
+Document:
+- Pipeline name and location in repo
+- Trigger mechanism (BATCH START)
+- Overall purpose: Assigns Global MRNs to candidate patient accounts
+- List of ALL notebooks in the pipeline
+
+### 2.2 Key Notebooks in pl_leaddiscovery_globalmrn_assign:
+
+| Activity | Notebook Path | Function |
+|----------|--------------|----------|
+| **globalmrn_assign_get_minmaxdt** | `/Insleads-code/LeadDiscovery/globalmrn_assign/globalmrn_assign_get_minmaxdt` | Calculates date range for processing |
+| **globalmrn_assign_get_candidate_patientaccts** | `/Insleads-code/LeadDiscovery/globalmrn_assign/globalmrn_assign_get_candidate_patientaccts` | Identifies candidate patient accounts |
+| **lsb_lookup (optimized_lsb_lookup)** | `/Insleads-code/LeadDiscovery/common/optimized_lsb_lookup` | Lead Service Base cross-reference lookup |
+| **globalmrn_assign_process_leads** | `/Insleads-code/LeadDiscovery/globalmrn_assign/globalmrn_assign_process_leads` | Process lead records with filtering |
+| **check_leads** | `/Insleads-code/LeadDiscovery/common/check_leads` | Compare against previously sent leads |
+| **sqoop_out** | `/Insleads-code/LeadDiscovery/common/sqoop_out` | Export to hdppatientacctxlead/hdppatientacctxleadbatch |
+
+### 2.3 For EACH Notebook:
+
+#### Analyze:
+1. **Input Sources**:
+   - Table names and paths
+   - Schema validation
+   - Read operations (code snippets)
+
+2. **Transformation Logic**:
+   - Filters (extract actual filter conditions)
+   - Joins (type, keys, conditions)
+   - Aggregations/rollups
+   - Data quality checks
+   - Business rules
+   - UDFs or custom functions
+
+3. **Output/Pass-through**:
+   - Target tables or temp views
+   - Data passed to next notebook
+
+4. **Code Evidence**:
+   - Extract 5-15 line code snippets
+   - Note cell numbers and line numbers
+   - Include variable names and table references
+
+### 2.4 Mapping to Ab-Initio Steps
+For this pipeline, identify which Ab-Initio steps (1-17) are implemented:
+- Which notebooks implement which steps
+- Any partial implementations
+- Any missing logic
+
+**📝 DELIVERABLE FOR PHASE 2**: Complete documentation of pl_leaddiscovery_globalmrn_assign with:
+- All notebooks analyzed
+- All transformations documented with code evidence
+- Mapping to Ab-Initio Steps 1-17 (which steps are covered)
+- Initial gap identification for this pipeline
+
+---
+
+## PHASE 3: Analyze Databricks Pipeline 2 - pl_leaddiscovery_known_commercial
+
+### Objective: Deep dive into the second pipeline (Candidate Selector)
+
+**DO NOT MOVE TO PHASE 4 UNTIL THIS IS COMPLETE**
+
+### 3.1 Key Notebooks in pl_leaddiscovery_known_commercial:
+
+| Activity | Notebook Path | Function |
+|----------|--------------|----------|
+| **sqoop_input (knowncommercial_import)** | Concatenated path | Imports hospital/payer configurations from SQL |
+| **known_commercial_extract_data** | `/Insleads-code/LeadDiscovery/known_commercial/known_commercial_extract_data` | Extracts patient account data |
+| **known_commercial_process_data** | `/Insleads-code/LeadDiscovery/known_commercial/known_commercial_process_data` | Standardizes formats and transformations |
+| **known_commercial_filter_data** | `/Insleads-code/LeadDiscovery/known_commercial/known_commercial_filter_data` | Filters for Known Commercial criteria |
+| **known_commercial_publish_data** | `/Insleads-code/LeadDiscovery/known_commercial/known_commercial_publish_data` | Publishes candidates and triggers next pipeline |
+| **sqoop_out (knowncommercial_export)** | Concatenated path | Exports to hdppatientacctxops |
+
+### Follow same structure as Phase 2:
+- 3.2 Notebook-by-Notebook Analysis
+- 3.3 Mapping to Ab-Initio Steps
+
+**Note**: This pipeline specifically targets commercial insurance discovery
+
+**📝 DELIVERABLE FOR PHASE 3**: Complete documentation of pl_leaddiscovery_known_commercial with:
+- All notebooks analyzed
+- All transformations documented with code evidence
+- Mapping to Ab-Initio Steps 1-17
+- Cumulative gap analysis (Phases 2+3)
+
+---
+
+## PHASE 4: Analyze Databricks Pipeline 3 - pl_leaddiscovery_leadlookup_knowncommercial
+
+### Objective: Deep dive into the Lead Generator pipeline
+
+**DO NOT MOVE TO PHASE 5 UNTIL THIS IS COMPLETE**
+
+### 4.1 Key Notebooks in pl_leaddiscovery_leadlookup_knowncommercial:
+
+| Activity | Notebook Path | Function |
+|----------|--------------|----------|
+| **knowncommercial_get_minmaxdt** | `/Insleads-code/LeadDiscovery/leadlookup_knowncommercial/knowncommercial_get_minmaxdt` | Date range calculation |
+| **knowncommercial_get_candidate_patientaccts** | `/Insleads-code/LeadDiscovery/leadlookup_knowncommercial/knowncommercial_get_candidate_patientaccts` | Get candidates with lead_mode_flag="0" |
+| **knowncommercial_process_cpa_lsb_xtable** | `/Insleads-code/LeadDiscovery/leadlookup_knowncommercial/knowncommercial_process_cpa_lsb_xtable` | CPA-LSB cross-reference table |
+| **process_globalmrnifk_leadlookup** | `/Insleads-code/LeadDiscovery/leadlookup_knowncommercial/knowncommercial_run_leadlookup` | GlobalMRN lookup (keyname=globalmrnifk) |
+| **process_permid_leadlookup** | Same notebook | PermID lookup (keyname=permid) |
+| **process_ssn_leadlookup** | Same notebook | SSN lookup (keyname=ssn) |
+| **process_medicalrecnum_leadlookup** | Same notebook | MRN lookup (keyname=medicalrecnum) |
+| **process_clusteredacctfk_leadlookup** | Same notebook | ClusteredAcct lookup (keyname=clusteredacctfk) |
+| **merge_cpa_xleads** | `/Insleads-code/LeadDiscovery/common/merge_cpa_xleads` | Merge all lookup results |
+| **process_leads** | `/Insleads-code/LeadDiscovery/leadlookup_knowncommercial/knowncommercial_process_leads` | Final lead processing |
+
+### 4.2 Special Focus: Parallel Identity Lookups
+This pipeline runs **5 parallel identity lookups**:
+- GlobalMRN (idx_identity, globalmrnifk)
+- PermID (idx_identity, permid)
+- SSN (idx_identity, ssn)
+- MedicalRecNum (idx_identity, medicalrecnum)
+- ClusteredAcctFK (idx_identity, clusteredacctfk)
+
+**📝 DELIVERABLE FOR PHASE 4**: Complete documentation with:
+- All notebooks analyzed (especially the parallel lookup pattern)
+- All transformations documented with code evidence
+- Mapping to Ab-Initio Steps 1-17
+- Cumulative gap analysis (Phases 2+3+4)
+
+---
+
+## PHASE 5: Analyze Databricks Pipeline 4 - pl_leaddiscovery_leadverify
+
+### Objective: Deep dive into the Quality Gate pipeline
+
+**DO NOT MOVE TO PHASE 6 UNTIL THIS IS COMPLETE**
+
+### 5.1 Key Notebooks in pl_leaddiscovery_leadverify:
+
+| Activity | Notebook Path | Function |
+|----------|--------------|----------|
+| **leadverify_get_minmaxdt** | `/Insleads-code/LeadDiscovery/leadverify/leadverify_createlookup_maxminadmitdays` | Admit date lookups |
+| **leadverify_get_candidates** | `/Insleads-code/LeadDiscovery/leadverify/get_leadverify_candidates` | Get verification candidates |
+| **leadverify_apply_leadverify_checks** | `/Insleads-code/LeadDiscovery/leadverify/apply_leadverify_checks` | Apply verification business rules |
+| **leadverify_lookupleads** | `/Insleads-code/LeadDiscovery/leadverify/Leadverify_LeadLookupByID` | LSB lookup with keyname="all" |
+| **leadverify_filter_lsb_leads** | `/Insleads-code/LeadDiscovery/leadverify/filter_lsb_leads` | Filter LSB results |
+| **filter_leadverifyrepo_leads** | `/Insleads-code/LeadDiscovery/leadverify/filter_leadverifyrepo_leads` | Check Lead Verification Repository |
+| **leadverify_process_leads** | `/Insleads-code/LeadDiscovery/leadverify/process_leadverify_leads` | Final processing |
+
+**📝 DELIVERABLE FOR PHASE 5**: Complete documentation with:
+- All notebooks analyzed
+- All transformations documented with code evidence
+- Mapping to Ab-Initio Steps 1-17
+- Cumulative gap analysis (Phases 2+3+4+5)
+
+---
+
+## PHASE 6: Analyze Databricks Pipeline 5 - pl_leaddiscovery_lead_propagation
+
+### Objective: Deep dive into the final Distributor pipeline
+
+**DO NOT MOVE TO PHASE 7 UNTIL THIS IS COMPLETE**
+
+### 6.1 Key Notebooks in pl_leaddiscovery_lead_propagation:
+
+| Activity | Notebook Path | Function |
+|----------|--------------|----------|
+| **createlookup_maxminadmitdays** | `/Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_createlookup_maxminadmitdays` | 1-year lookback date calculation |
+| **get_pa** | `/Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_get_pa` | Get patient accounts by notification type |
+| **leadpropagation_process_leads** | `/Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads` | Standard lead processing |
+| **leadpropagation_process_leads_chc** | `/Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_process_leads_chc` | CHC-specific processing |
+| **check_leads** | `/Insleads-code/LeadDiscovery/leadpropagation/leadpropagation_check_leads` | Duplicate prevention |
+| **push_leads (sqoop_delta)** | `/Insleads-code/LeadDiscovery/leadpropagation/sqoop_delta` | Export to hdppatientacctxlead |
+
+### 6.2 Notification Types Handled:
+- ie_xref_lsb_propagation
+- es_xref_lsb_propagation
+- globalmrnmerge_xref_lsb_propagation
+- fc_xref_lsb_propagation
+- hfc_xref_lsb_propagation
+- ie_propagation_famc
+- es_propagation_famc
+- fc_propagation_famc
+- chc_xref_lsb_propagation
+
+**📝 DELIVERABLE FOR PHASE 6**: Complete documentation with:
+- All notebooks analyzed
+- All transformations documented with code evidence
+- Mapping to Ab-Initio Steps 1-17
+- **Output schema validation** (lookup files)
+- Final cumulative gap analysis (all 5 pipelines)
+
+---
+
+## PHASE 7: Comprehensive Mapping and Gap Analysis
+
+### Objective: Create the final cross-pipeline mapping
+
+**Prerequisites**: Phases 1-6 must be complete
+
+### 7.1 Create Master Mapping Table
+For each Ab-Initio step (1-17), document:
+- Which Databricks pipeline(s) implement it
+- Which notebooks within those pipelines
+- Exact code locations
+- Match status (Exact/Equivalent/Partial/Missing)
+
+### 7.2 Identify Missing Logic
+For any logic NOT found in the 5 pipelines:
+1. **Search entire Databricks repository** for:
+   - Table names (e.g., GlobalMRNxPacct, PatientAcctsXRefPermID, ClusteredAccts)
+   - Field names (e.g., globalmrnifk, permid, demographicsHashString)
+   - Business terms (e.g., backlog, encrypt, commercial, clustered)
+   - Transformation patterns
+
+2. **Document search results**:
+   - Search terms used
+   - Files/notebooks found
+   - Whether logic exists elsewhere
+
+### 7.3 Validate All Lookup Tables
+For each lookup table in Ab-Initio:
+- Find Databricks equivalent
+- Verify usage in joins/filters
+- Check if lookup logic matches
+
+### 7.4 Validate All Filter Rules
+For each filter from Ab-Initio:
+- Locate in Databricks code
+- Compare logic (may be SQL vs PySpark)
+- Verify conditions are equivalent
+
+**📝 DELIVERABLE FOR PHASE 7**:
+- Master mapping table (Ab-Initio → all 5 Databricks pipelines)
+- Complete gap analysis
+- Search results for missing logic
+- Lookup table comparison
+- Filter rule comparison
+
+---
+
+## PHASE 8: Generate Final Excel Deliverable
+
+### Objective: Compile all findings into structured Excel workbook
+
+**Prerequisites**: Phases 1-7 must be complete
+
+Generate an Excel workbook with **3 SHEETS**:
+
+---
+
+## SHEET 1: Logic Comparison (Main Comparison Sheet)
+
+**Purpose**: Comprehensive mapping of every Ab-Initio logic component to Databricks implementation across all 5 pipelines
+
+### Column Definitions:
+- **Ab-Initio Step/Logic**: Step number (1-17) or specific transformation rule
+- **Ab-Initio Logic Description**: DETAILED explanation (3-5 sentences minimum) of:
+  - What data is being processed
+  - What transformation is applied
+  - Business context and purpose
+  - Expected outcome
+  - **NOT just a name - explain the full logic**
+- **Ab-Initio Business Rule**: Specific business rule or validation being enforced
+- **Ab-Initio Inputs**: Source datasets/tables
+- **Ab-Initio Outputs**: Resulting dataset or intermediate output
+- **Databricks Pipeline**: Name of the pipeline(s) implementing this logic
+- **Databricks Notebook**: Specific notebook name(s)
+- **Databricks Logic Description**: DETAILED explanation of Databricks implementation
+- **Databricks Code Evidence**: Actual code snippet (5-15 lines)
+- **Code Location**: Exact location (Cell X, Lines Y-Z or Function name)
+- **Match Status**: 
+  - ✅ Exact Match
+  - ⚠️ Equivalent (different approach, same result)
+  - ⚠️ Partially Implemented
+  - ❌ Missing
+  - 🔍 Found Elsewhere (specify location)
+- **Implementation Difference**: Specific differences between Ab-Initio and Databricks
+- **Data Impact**: No Impact / Low / Medium / High
+- **Severity**: Critical / High / Medium / Low
+- **Comments & Recommendations**: Detailed notes, validation needs, recommended actions
+
+### Table Format Example:
+
+| Ab-Initio Step/Logic | Ab-Initio Logic Description | Ab-Initio Business Rule | Ab-Initio Inputs | Ab-Initio Outputs | Databricks Pipeline | Databricks Notebook | Databricks Logic Description | Databricks Code Evidence | Code Location | Match Status | Implementation Difference | Data Impact | Severity | Comments & Recommendations |
+|----------------------|----------------------------|------------------------|------------------|-------------------|-------------------|---------------------|----------------------------|-------------------------|---------------|--------------|--------------------------|-------------|----------|---------------------------|
+| **Step 6** | Reads GlobalMRNxPacct table containing Global Medical Record Number cross-references. Applies critical filters: hospitalfk >= 1000, createdate within last 3 years (1095 days), and isdeleted = 0. This ensures only valid, recent records from eligible hospitals are processed. GlobalMRN serves as a unique patient identifier across the healthcare system. | Filter: hospitalfk >= 1000 AND date_difference_days(now, createdate) <= 1095 AND isdeleted = 0 | GlobalMRNxPacct | Filtered GlobalMRN data | pl_leaddiscovery_globalmrn_assign | globalmrn_assign_get_candidate_patientaccts | [Search and document actual implementation] | [Extract actual code] | [Cell/Line ref] | [Status] | [Document differences] | [Impact] | [Severity] | [Recommendations] |
+| **Step 7 - GlobalMRN Lookup** | Inner joins VSnapPatientAcctsFlags with GlobalMRNxPacct using {hospitalfk, patientacctipk} and {hospitalfk, patientacctifk}. Sorts by globalmrnifk and merges to create block compressed lookup file. This creates the primary identity cross-reference used for patient matching. | Join: inner join on hospital and patient account keys, deduplicate by globalmrnifk | Step 5a (VSnapPatientAcctsFlags), Step 6 (GlobalMRNxPacct) | ediComGenVSnapGlobalMRNxPacct.idx/lkp | pl_leaddiscovery_leadlookup_knowncommercial | process_globalmrnifk_leadlookup | [Search and document actual implementation] | [Extract actual code] | [Cell/Line ref] | [Status] | [Document differences] | [Impact] | [Severity] | [Recommendations] |
+
+**Continue this table for ALL 17 Ab-Initio steps and all filter/transformation rules...**
+
+---
+
+## SHEET 2: Gap Analysis & Recommendations
+
+**Purpose**: Summarize all missing logic, additional Databricks logic, implementation differences, and critical findings
+
+### Section A: Missing Ab-Initio Logic
+
+**Table Format:**
+
+| Gap # | Ab-Initio Logic | Expected Behavior | Found in Pipeline? | Search Evidence | Impact on Data | Severity | Recommendation | Priority | Status |
+|-------|-----------------|-------------------|-------------------|-----------------|----------------|----------|----------------|----------|--------|
+| 1 | Step 12 - ClusteredAccts AES Encryption | Encrypt firstname, middlename, lastname fields using encode_base64(encrypt_aes_simple(field, aes_key)) | 🔍 SEARCH REQUIRED | Need to search for encrypt, aes, encode_base64 patterns in Databricks notebooks | **High Impact**: PII encryption for compliance | Critical | Search entire repo for encryption patterns. If missing, implement in appropriate pipeline | P0 | Open |
+| 2 | Step 14 - demographicsHashString transformation | Apply string_to_hex(demographicshash) for lookup key generation | 🔍 SEARCH REQUIRED | Search for string_to_hex, demographicshash, demographicsHashString | **Medium Impact**: Affects lookup matching | High | Verify hash transformation in commercial helpers processing | P1 | Open |
+
+**Continue for all identified gaps...**
+
+### Section B: Additional Databricks Logic (Not in Ab-Initio)
+
+**Table Format:**
+
+| Item # | Databricks Logic | Pipeline | Notebook | Purpose | Risk Assessment | Should It Be There? | Comments |
+|--------|------------------|----------|----------|---------|-----------------|---------------------|----------|
+| 1 | Lead Service Base (LSB) lookup via optimized_lsb_lookup | pl_leaddiscovery_globalmrn_assign | optimized_lsb_lookup | Cross-references against existing lead coverage | **Low Risk** - Enrichment addition | ✅ Yes - Business enhancement | LSB provides existing coverage info not in Ab-Initio |
+| 2 | Parallel identity lookups (5 parallel processes) | pl_leaddiscovery_leadlookup_knowncommercial | knowncommercial_run_leadlookup | Performance optimization for identity matching | **Low Risk** - Architecture improvement | ✅ Yes - Performance enhancement | Ab-Initio did sequential; Databricks does parallel |
+
+**Continue for all additional logic...**
+
+### Section C: Implementation Differences Requiring Validation
+
+**Table Format:**
+
+| Item # | Logic Component | Ab-Initio Approach | Databricks Approach | Potential Data Impact | Validation Required | Recommendation |
+|--------|-----------------|-------------------|--------------------|--------------------|---------------------|----------------|
+| 1 | Lookup file creation (block compressed) | Ab-Initio native block compressed lookup (WBCL component) | Delta Lake tables or Parquet files with optimization | **Low Impact**: Storage format difference | **YES - Medium Priority**: Verify lookup performance and correctness | Compare lookup results between Ab-Initio and Databricks |
+| 2 | Date filtering (1095 days vs 365 days) | Ab-Initio uses 1095 days (3 years) lookback for GlobalMRNxPacct | Need to verify Databricks lookback period | **High Impact**: Could affect data volume significantly | **YES - High Priority**: Confirm date filters match | Review globalmrn_assign_get_candidate_patientaccts |
+
+**Continue for all differences...**
+
+### Section D: Critical Findings Summary
+
+**Table Format:**
+
+| Finding | Description | Impact | Action Required | Owner | Due Date | Status |
+|---------|-------------|--------|-----------------|-------|----------|--------|
+| **AES Encryption for PII** | Ab-Initio encrypts ClusteredAccts PII fields (firstname, middlename, lastname) using AES. Need to verify Databricks encryption approach. | **Critical**: Compliance and data security | 1) Search for encryption in all 5 pipelines. 2) If missing, implement immediately. 3) Validate against compliance requirements. | Data Engineering | [Within 1 week] | 🔴 Open - Urgent |
+| **Backlog Flag Calculation** | Ab-Initio calculates EDI submitter and partner backlog flags based on message counts and transport limits. Complex business logic. | **High**: Affects EDI transmission throttling | 1) Search for backlog, isBacklogFlag, maxunitsperday, maxfilesperday. 2) Map to Databricks equivalent. | Data Engineering | [Within 2 weeks] | 🟡 Open - High Priority |
+
+**Continue for all critical findings...**
+
+---
+
+## SHEET 3: Pipeline & Data Flow Overview
+
+**Purpose**: High-level overview of all 5 pipelines and end-to-end data lineage
+
+### Section A: Pipeline Summary
+
+**Table Format:**
+
+| Pipeline Name | Purpose | Trigger/Dependency | Input Tables | Output Tables | Key Notebooks | Ab-Initio Steps Covered | Complexity | Status | Critical Notes |
+|---------------|---------|-------------------|--------------|---------------|---------------|------------------------|------------|--------|----------------|
+| pl_leaddiscovery_globalmrn_assign | Identity Producer - Assigns GMRN/PermID to patient accounts | BATCH START (first in flow) | PatientAccts, GlobalMRNxPacct, PatientAcctsXRefPermID | candidatepaleads, patientacctxlead | globalmrn_assign_get_minmaxdt, get_candidate_patientaccts, optimized_lsb_lookup, process_leads | Steps: 6, 7, 8, 10, 11 (potentially) | High | [Status] | Core identity assignment - focus of detailed analysis |
+| pl_leaddiscovery_known_commercial | Candidate Selector - Identifies commercial insurance candidates | After globalmrn_assign | PatientAccts, configurations | candidatepa, triggers LeadLookup | known_commercial_extract_data, process_data, filter_data, publish_data | Steps: 1, 2, 3, 4, 5 (potentially) | Medium | [Status] | Commercial-specific filtering |
+| pl_leaddiscovery_leadlookup_knowncommercial | Lead Generator - Multi-attribute identity lookup | Triggered by known_commercial | candidatepa, LSB | candidatepaleadsmerged, patientacctxlead | 5 parallel lookups + merge_cpa_xleads + process_leads | Steps: 7, 10, 11 (lookup patterns) | High | [Status] | Parallel lookup pattern critical |
+| pl_leaddiscovery_leadverify | Quality Gate - Verifies leads against LSB and repository | Various triggers | processleads, LSB, leadverifyrepo | verified leads | apply_leadverify_checks, Leadverify_LeadLookupByID, filter_lsb_leads | Quality checks (not direct mapping) | Medium | [Status] | Validation step not in Ab-Initio |
+| pl_leaddiscovery_lead_propagation | Distributor - Final push to EDI system | Multiple notification types | candidatepaleadspost, delta leads | hdppatientacctxlead (final) | leadpropagation_process_leads, sqoop_delta | Final output (Steps 16, 17 backlog?) | High | [Status] | Multi-notification type handling |
+
+### Section B: End-to-End Data Lineage
+
+**Visual Representation:**
+
+```
+VSnapPatientAcctsFlags ──────────────────────────────────────────────────────────────────────────────────┐
+PatientAccts ─────────────────────────────────────────────────────────────────────────────────────────────┤
+GlobalMRNxPacct ──────────────────────────────────────────────────────────────────────────────────────────┤
+PatientAcctsXRefPermID ───────────────────────────────────────────────────────────────────────────────────┤
+                                                                                                          │
+┌─ pl_leaddiscovery_globalmrn_assign ────────────────────────────────────────────────────────────────────┐│
+│  [globalmrn_assign_get_candidate_patientaccts] → [optimized_lsb_lookup] → [process_leads]              ││
+└───────────────────────────────────────────────────────────────────────────────────────────────────────┬┘│
+                                                                                                        │ │
+┌─ pl_leaddiscovery_known_commercial ───────────────────────────────────────────────────────────────────┐│ │
+│  [extract_data] → [process_data] → [filter_data] → [publish_data] → TRIGGER                          ││ │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────┬─┘│ │
+                                                                                                      │  │ │
+┌─ pl_leaddiscovery_leadlookup_knowncommercial ───────────────────────────────────────────────────────┐│  │ │
+│  [get_candidate_patientaccts] → [process_cpa_lsb_xtable] →                                          ││  │ │
+│     ├─→ [GlobalMRN Lookup] ─┐                                                                       ││  │ │
+│     ├─→ [PermID Lookup] ────┼─→ [merge_cpa_xleads] → [process_leads]                               ││  │ │
+│     ├─→ [SSN Lookup] ───────┤                                                                       ││  │ │
+│     ├─→ [MRN Lookup] ───────┤                                                                       ││  │ │
+│     └─→ [ClusteredAcct Lookup]┘                                                                     ││  │ │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┬─┘│  │ │
+                                                                                                    │  │  │ │
+┌─ pl_leaddiscovery_leadverify ─────────────────────────────────────────────────────────────────────┐│  │  │ │
+│  [get_candidates] → [apply_leadverify_checks] → [Leadverify_LeadLookupByID] →                     ││  │  │ │
+│  [filter_lsb_leads] → [filter_leadverifyrepo_leads] → [process_leadverify_leads]                  ││  │  │ │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┬─┘│  │  │ │
+                                                                                                  │  │  │  │ │
+┌─ pl_leaddiscovery_lead_propagation ───────────────────────────────────────────────────────────────┐│  │  │  │ │
+│  [createlookup_maxminadmitdays] → [get_pa] → [process_leads/process_leads_chc] →                  ││  │  │  │ │
+│  [check_leads] → [sqoop_delta] → hdppatientacctxlead (EDI System)                                 ││  │  │  │ │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘│  │  │  │ │
+                                                                                                     │  │  │  │ │
+ClusteredAccts ───────────────────────────→ (Encrypted lookup - Step 12) ────────────────────────────┘  │  │  │ │
+PatientAcctCommercialHelpers ─────────────→ (demographicsHashString lookup - Step 14) ──────────────────┘  │  │ │
+EdiMessages ──────────────────────────────→ (Backlog calculation - Steps 15-17) ────────────────────────────┘  │ │
+                                                                                                              │ │
+OUTPUT: hdppatientacctxlead (EDI transmission database) ──────────────────────────────────────────────────────┘ │
+        lkpEdiSubmitterBacklog, lkpEdiPartnerBacklog (backlog lookups) ─────────────────────────────────────────┘
+```
+
+### Section C: Lookup Table Mapping
+
+**Table Format:**
+
+| Ab-Initio Lookup | Purpose | Databricks Equivalent | Location | Match Status | Notes |
+|-----------------|---------|---------------------|----------|--------------|-------|
+| ediComGenVSnapGlobalMRNxPacct.idx/lkp | GlobalMRN to patient account mapping | [Search in leadlookup_knowncommercial] | [Pipeline/notebook if found] | [Status] | Step 7 output |
+| ediComGenPatientAcctsXRefPermIDJoin.idx/lkp | PermID join lookup | [Search in leadlookup] | [Location] | [Status] | Step 10 output |
+| ediComGenPatientAcctsXRefPermID.idx/lkp | PermID direct lookup | [Search] | [Location] | [Status] | Step 11 output |
+| ediGenClusteredAccts.lkp | Encrypted clustered accounts | [Search for encryption] | [Location] | [Status] | Step 12 - AES encryption |
+| ediGenPatientAcctCommercialHelpers.idx/lkp | Commercial helpers with hash | [Search for demographicsHashString] | [Location] | [Status] | Step 14 output |
+| lkpEdiSubmitterBacklog | EDI submitter backlog flags | [Search for backlog] | [Location] | [Status] | Step 16 output |
+| lkpEdiPartnerBacklog | EDI partner backlog flags | [Search for backlog] | [Location] | [Status] | Step 17 output |
+
+### Section D: Output Schema Validation
+
+**Validate all output fields from Ab-Initio:**
+
+| Field # | Ab-Initio Field Name | Ab-Initio Data Type | Databricks Field Name | Databricks Data Type | Match Status | Source Mapping | Transformation Applied | Notes |
+|---------|---------------------|--------------------|--------------------|---------------------|--------------|----------------|----------------------|-------|
+| 1 | hospitalfk | decimal | [from analysis] | [type] | [status] | PatientAccts | None (direct copy) | [Notes] |
+| 2 | patientacctifk | decimal | [field] | [type] | [status] | PatientAccts | None (direct copy) | [Notes] |
+| 3 | globalmrnifk | decimal | [field] | [type] | [status] | GlobalMRNxPacct | None (join key) | [Notes] |
+| 4 | permid | string(12) | [field] | [type] | [status] | PatientAcctsXRefPermID | None (direct copy) | [Notes] |
+| 5 | demographicsHashString | string | [field] | [type] | [status] | PatientAcctCommercialHelpers | string_to_hex(demographicshash) | [Notes] |
+| ... | ... | ... | ... | ... | ... | ... | ... | ... |
+
+---
+
+## Output Requirements
+
+### Final Deliverable
+One Excel workbook: **"105_CommGen_Migration_Analysis.xlsx"** with 3 sheets as detailed above.
+
+### Quality Checklist (Verify Before Delivering)
+- [ ] **All 17 Ab-Initio steps** documented and mapped
+- [ ] **All 5 Databricks pipelines** thoroughly analyzed
+- [ ] **ALL notebooks in each pipeline** examined
+- [ ] **Code evidence** included for every transformation (5-15 line snippets with cell/line numbers)
+- [ ] **Descriptions are detailed** (3-5 sentences minimum for complex logic, NOT just names)
+- [ ] **Extended repository search** performed for all missing logic
+- [ ] **All lookup tables** identified and mapped
+- [ ] **Output schema validation** complete (all output fields)
+- [ ] **All filter rules** from Ab-Initio documented and located in Databricks
+- [ ] **Gap analysis complete** with severity and recommendations
+- [ ] **Match status** assigned for every logic component
+- [ ] **Implementation differences** documented with validation requirements
+
+---
+
+## Special Instructions
+
+### 1. Thoroughness Over Speed
+- Do NOT rush through pipelines
+- Analyze EVERY notebook in each pipeline
+- Extract actual code snippets (not summaries)
+- Document exact locations (cell numbers, line numbers)
+
+### 2. Description Quality
+**BAD Example** (too brief):
+- "Step 6 - Read GlobalMRNxPacct"
+
+**GOOD Example** (detailed):
+- "Reads the GlobalMRNxPacct table containing Global Medical Record Number cross-references to patient accounts. This table is critical for consolidating patient identities across different source systems. Key filters applied: hospitalfk >= 1000 (only eligible hospitals), createdate within last 1095 days (3 years of data for historical matching), and isdeleted = 0 (exclude soft-deleted records). The GMRN serves as the primary cross-system patient identifier used in all downstream lookups. Data is read using eScan Data Reader component with both base and delta file processing."
+
+### 3. Code Evidence Requirements
+- Always include actual code snippets (5-15 lines)
+- Show context (variable names, function calls, conditions)
+- Format code clearly with proper line breaks
+- Include cell/function location precisely
+
+### 4. Search Strategy for Missing Logic
+When logic is not found in primary pipelines, search by:
+1. **Exact table names**: GlobalMRNxPacct, PatientAcctsXRefPermID, ClusteredAccts, PatientAcctCommercialHelpers
+2. **Field names**: globalmrnifk, permid, demographicsHashString, isBacklogFlag
+3. **Partial names**: clustered, commercial, backlog, encrypt
+4. **Business terms**: GMRN, PermID, EDI, submitter, partner
+5. **Patterns**: encrypt_aes, string_to_hex, block_compressed, lookup
+
+### 5. Match Status Guidelines
+- ✅ **Exact Match**: Same tables, same logic, same fields, same conditions
+- ⚠️ **Equivalent**: Different implementation (SQL vs PySpark) but produces same business result
+- ⚠️ **Partially Implemented**: Some aspects present, critical pieces missing
+- ❌ **Missing**: Not found in any of the 5 primary pipelines (after thorough search)
+- 🔍 **Found Elsewhere**: Located in different pipeline or notebook (specify exact location)
+
+### 6. Severity Guidelines
+- **Critical**: Missing business logic, data correctness at risk, compliance issues, encryption/security
+- **High**: Implementation differences requiring validation, potential moderate data impact
+- **Medium**: Different approaches likely correct but need confirmation, low data impact risk
+- **Low**: Minor differences, exact matches, no data impact
+
+### 7. Phased Execution Reminder
+**DO NOT SKIP PHASES**
+1. Complete Phase 1 (Ab-Initio understanding) fully
+2. Complete Phase 2 (Pipeline 1 - globalmrn_assign) fully before moving to Phase 3
+3. Complete Phase 3 (Pipeline 2 - known_commercial) fully before moving to Phase 4
+4. Complete Phase 4 (Pipeline 3 - leadlookup_knowncommercial) fully before moving to Phase 5
+5. Complete Phase 5 (Pipeline 4 - leadverify) fully before moving to Phase 6
+6. Complete Phase 6 (Pipeline 5 - lead_propagation) fully before moving to Phase 7
+7. Only then compile final mapping and gaps (Phase 7)
+8. Generate Excel deliverable (Phase 8)
+
+---
+
+## Success Criteria
+
+The analysis is considered complete and successful when:
+
+1. ✅ All 17 Ab-Initio steps are documented in detail
+2. ✅ All 5 Databricks pipelines are thoroughly analyzed
+3. ✅ Every notebook in every pipeline has been examined
+4. ✅ Every transformation rule is mapped with code evidence
+5. ✅ All missing logic has been identified with extended search results
+6. ✅ All lookup tables are documented and located
+7. ✅ Output schema is validated (all output fields)
+8. ✅ Implementation differences have validation plans
+9. ✅ Critical gaps have recommendations and priorities
+10. ✅ Excel deliverable has all 3 sheets with complete information
+
+**This is a comprehensive, multi-pipeline migration validation. Take the time to do it right. Work through each phase systematically and document thoroughly.**
