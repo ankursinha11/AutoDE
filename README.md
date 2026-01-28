@@ -1,8 +1,2 @@
-"Architectual change-Databricks has more robust, explict check to prevent duplicate processing.
-Major data model change-
-A new field was introduced as hospitalfk as a part of new sharding changes.
-Response code exclusion- In Hadoop there were 2 codes excluded, whereas databricks shows 13 different response codes excluded.
-Package for ES and Upload to DEG
-A data publish process was identified in Hadoop which was sent to escan/Ab-Initio/2.0.
-Additional step in Databricks
-Databricks includes additional step which creates a final xref data for downstream Lead Service base consumption."
+"Ab-Initio Step","Ab-Initio Logic Description","Ab-Initio Business Rule","Ab-Initio Inputs","Ab-Initio Outputs","Databricks Pipeline","Databricks Notebook","Databricks Logic Description","Databricks Code Evidence","Match Status","Implementation Difference","Comments","FT Comments"
+"Step 1 – Input Processing on PATIENTACCOUNTS","Reads from PATIENTACCOUNTS and filters to HospitalFK = 9000 with a 1-year lookback (RunDate - 365) on created date.","Select Charlotte (HospitalFK = 9000) patient accounts created in the last 365 days to feed GMRN relation processing.","PATIENTACCOUNTS table","Subset of PATIENTACCOUNTS for HospitalFK = 9000 and created within last 365 days.","CDD – TuSourcedFamilyMemberLink (GMRN Relations)","CDD/tusourcedfamilymemberlink/unique_permid_patientacctid_relations.py","Reads from the patientaccts Delta table, creates temp view patientaccts, and applies a 1-year lookback filter while retaining hospitalfk for downstream joins.","Lines 67–71: patientaccts loaded from pa_path and filtered via SQL: SELECT patientacctipk, hospitalfk FROM patientaccts WHERE createdate > CURRENT_DATE - 366.","MATCH (Architectural Improvement)","Ab Initio is Charlotte-only with HospitalFK = 9000; Databricks uses the same ~1-year time window but removes the hardcoded hospital filter, implementing a single unified multi-hospital pipeline.","Hospital scoping moved from a dedicated Charlotte graph to a generalized pipeline; this step no longer relies on hfc_xref or Lead Discovery comparisons, aligning with client feedback.",""
